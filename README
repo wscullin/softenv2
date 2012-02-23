@@ -1,0 +1,22 @@
+#
+# Softenv2 - Rebooting Softenv
+#
+
+Goals:
+	1. Rewrite for easy long-term maintenance
+	2. Push OO in both code and configurations
+	3. Embrace the principle of least surprise
+	  A. Order of operations should not matter - unless made explicit
+          B. Conflicts should be announced in both global and user configs
+          C. Dependencies should autoresolve - but be declared
+	4. Allow for decentralized configurations and least-privilage
+	5. Allow for build information in the package config
+	  A. maintainer name and contact
+	  B. install date
+          C. activation date
+          D. build host and location
+	  E. license
+          E. source location
+          F. build flags and env details
+
+
