@@ -1,0 +1,39 @@
+=head1 NAME
+
+soft-dbq - Program to query the database on a key or macro
+
+=head1 DESCRIPTION
+
+This program is run with one argument, either a key or a macro, and
+it returns any information about that key or macro contained in the
+softenv database.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft-dbq. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+soft-dbq [C<-t>] [C<-a> arch] keyword|macro
+
+=over
+
+=item -t
+
+Use the test database
+
+=item -u -h --help
+
+Helpful messages
+
+=item -v --version
+
+Version
+
+=item keyword|macro
+
+The actual keyword or macro to query.
+
+=back

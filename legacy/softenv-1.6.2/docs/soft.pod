@@ -1,0 +1,32 @@
+=head1 NAME
+
+soft - dynamically change the environment by adding or deleting keys
+
+=head1 DESCRIPTION
+
+This program dynamically changes your software environment.  By specifing
+either add or delete and specifying a keyword, that keyword will be added
+or deleted from your environment.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+soft add|delete keyword|macro
+
+=over
+
+=item add|delete
+
+One of these must be present.  It specifies the deletion or addition of a
+software keyword.
+
+=item keyword|macro
+
+The keyword or macro to delete or add.
+
+=back

@@ -1,0 +1,625 @@
+=head1 NAME
+
+softenv-code - code explanations for the softenv system
+
+=head1 DESCRIPTION
+
+Notes to anyone coping with the code in the SoftEnv system.  Disclaimer:
+This document won't exactly be the best formatted document, or might not
+be complete or whatever.  This file has been sporadically added to by
+both coders.  Just be happy this document exists. :)
+
+=head2 soft-msc
+
+soft-msc is a perl script to parse the users SOFTENVRC files.  It uses compiler 
+techniques to make it a lot easier to understand and easy to edit. The program 
+follows this sequence:
+
+=over
+
+=item Initialization
+
+This sets up global vars, gets the SOFTENVRC file ready for reading, and reads the 
+database and puts it into %db.
+
+=item Pass 0
+
+The SOFTENVRC file is read into an array, and each line is put into a global array 
+called @pass0, including comments and blank lines.
+
+=item Pass 1
+
+This pass translates the file read in in pass 0, and makes a stream of 
+instructions out of it.  The major thing it takes care of is the conditionals, 
+and also turns the +key and @macro into instructions which can be looked at in 
+the source.
+
+=item Pass 2
+
+During pass 2, the @remove keywords are taken care of, and the @macros are 
+expanded into seperate keys.
+
+=item Pass 3
+
+Pass 3 does a lot.  It throws the "initvar" instructions into the stream for 
+each variable in %initialize, and then puts the "initenv" instruction on.  The 
+"add"s are changed into "econadd"s if necessary, with a dumpenv appearing 
+before it.  It produces the if clauses here, basically by throwing in the 
+"if"s and "endif"s.  At the end of the pass, a sneak pass is run through and 
+a "dumpenv" is put into the stream after any series of "add"s interrupted by 
+something.
+
+=item Pass 4
+
+Pass 4 also does a lot.  For every "econadd", it puts everything needed for 
+the if-else-if statements into the instruction stream.  For each "add", the 
+specific env variables that are going to be set are put into the %env hash.  
+When a dumpenv is hit, everything in %env is put into the instruction stream 
+in a HUGE switch statement and a lot of "append"s and "set"s.  Pass 4 also 
+uniquify's the env variables to make sure the same path appears twice, for 
+example.
+
+=item Pass 5
+
+Pass 5 converts the pass 4 instructions into actual lines of code for both the 
+csh and sh shells.  This is done through a nifty method, because the 'formats' 
+for each instruction are defined at the bottom of the file. Look there and it 
+will all make sense.  Then, for each instruction, the %variable% and %value% 
+strings will be replaced by the actual values and all is good.
+
+=item Output
+
+Output should be pretty straightforward, one thing to note is that the 
+indentation is done here, everytime it hits the start of a control structure, 
+it increases the indentation by 2.  Then, it is taken down by 2 at the end.
+
+=back
+
+=head2 soft-msd
+
+soft-msd is a fairly simple perl script.  It follows roughly this logic:
+
+=over
+
+=item 1
+
+Set up global vars, read the environment.
+
+=item 2
+
+Read the database/databases.
+
+=over
+
+=item  a. 
+
+Read the entire thing into an array of lines.
+
+=item  b. 
+
+Break the lines into a set an array of tokens.
+
+=item  c. 
+
+Parse the array of tokens.  Each parse routine adds to %env.
+
+=back
+
+=item 3
+
+Check for any errors found in parsing.
+
+=item 4
+
+Write the compiled database, based on the contents of %env.
+
+=back
+
+=over
+
+=item Tokens
+
+The file is read line by line.  Tokens can't cross lines.
+
+Tokens are:
+
+ Anything contained in parens, including the parenthesis.
+ Anything contained in square brackets, include the brackets.
+ Left brace: {
+ Right brace: }
+ Words without spaces, braces, or brackets.
+
+Anything contained in the first and last quotes (") of a line gets considered 
+as a non-parsed string.
+
+=item Philosophy about defaults and architectures
+
+When coding this, I spent a lot of time trying to figure out the right way to 
+handle defaults for all architectures.  
+
+The semantics are this.  If a default PATH (or any environment variable) is 
+given, then it should get set for every architecture, UNLESS there are any 
+specific details given for that architecture.  I.e:
+
+  (+foo-1.0) {
+     [] { FOO  /foo }
+     [aix-4]  { BAR  /bar }
+  }
+
+This will set FOO to /foo on every architecture except aix-4, where there is 
+no value for FOO (but there is a value for BAR).
+
+In terms of implementing this, there's a question of what to put in the 
+compiled database:
+
+1) If the admin-created DB specifies a default value, let's say a PATH, then, 
+in the DB that this program creates, I put that PATH in for every known
+architecture.
+
+2) Or, I could put that PATH in just for the default and let soft-msc do
+the right thing with shell switch statements so that the default gets
+selected.
+
+I chose to go with (1).  It causes DB bloat, but that's ok, it's still quite 
+small bloat.
+
+The problem with (2) is that it becomes extremely difficult to figure out what 
+variables should be set in the default if you're processing many keyword 
+values at once, such as when doing a macro. 
+
+Note that there is still a "default" architecture stored in the DB as well. 
+This is so that soft-msc can set up a reasonable default switch in case the 
+user is running on some unknown architecture.
+
+=back
+
+=head2 softenv and soft-dbq
+
+softenv and soft-dbq are pretty simple programs.  They basically just
+read the soft.dbc file and reports what it finds to the user.
+
+Look at the source to these files if you're wondering how they work.
+
+=head2 soft-mad
+
+soft-mad scans the software tree and adds every package it can find into
+the soft-auto.db file.  NOTE: this program is pretty specific to each site
+that may use it.  It is suggested that you use a seperate admin utility
+called pkg, which will install applications into a structure like this.
+
+First the find_pkgs routine is called, which first gets a list of every
+possible directory in the following:
+
+  /software/common/*/packages/*
+
+For each package, it puts the collection it is in into the @col array, and
+the package name into @pkg.  These are then examined when each
+architecture is looked at for these packages.  
+
+When each package is looked at, it sees if there is a bin directory and if
+there is a man directory, then puts those into %bin and %man,
+respectively. It also checks for the admin/env file in that package
+directory.  If it is there, then environment variables have to be defined
+for that package.  These are put into the %env hash.
+
+It checks if the admin/link file exists, which means that the short form
+of the application name should point to this version, such as emacs-19
+pointing to emacs.
+
+Also, the oneliner description of the program is found in admin/pkginfo,
+and saved for later output.
+
+The output to the file is pretty self-explanatory.  It outputs it in the
+format defined for the .db files.  It should be evident from the code what
+is happening.
+
+=head2 soft-mwl
+
+soft-mwl is a program that takes the log of soft.db updates from RCS and
+creates a webpage from it.  This helps in documenting the changes that are
+made.  This is a very basic program which has a loop for each revision in
+the RCS output.  It parses each revision, stores it, and then outputs it
+neatly to the html file specified in softenv.config.pl.  Please refer to
+the source if you need to know how it works.
+
+=head2 soft-dec
+
+soft-dec is the program to dynamically change the environment, hence the
+name.  This program is wrapped inside of the alias 'soft', which calls
+soft-dec.  The basic theory for 'soft' and 'soft-dec' is that the user
+executes a 'soft add <keyword>' or a 'soft delete <keyword>' command, and
+that information is passed to soft-dec.  soft-dec finds the keyword
+variables to change and outputs shell code to change the environment based
+on the shell and on whether it was a delete or an add.  I'm not sure if
+that made sense.  That information is then passed back to the 'soft'
+alias, which contains all of that output in an 'eval ""'  Those commands
+are then executed, and the environment is changed.
+
+Here is a step-by-step analysis of the program.  First, the global
+variables are set, the database is read, and the command line arguments
+are parsed. The shell is read from the command line, so is the operation
+(add|delete) and finally the keyword is read.
+
+The database is then looked at to see which variables need to be set to
+what.  Then the program checks to see if econs are defined, and replaces
+the variables with the correct econ values based on the current
+environment.
+
+Then when the initial stuff is done, the lines of shell code are outputted
+based on the shell and the operation.
+
+The output is just a bunch of setenv statements for the addition.  For the
+subtraction, it is a little more complicated.  Especially when the
+variable is accumulated, instead of just set.  First the value is
+surrounded by :'s.  Then it is easier to subtract each value associated
+with that keyword.  There can always be more than one, and all of them
+should be out of the PATH or other variable.
+
+=head2 soft-menu-change and soft-menu-select
+
+Here is a simple description of both of these programs.  The program
+soft-menu-select is used to display the list of applications in a group,
+and then prompt the user for the one they want in their path.  
+
+Then, soft-menu-change retrieves the answer that they selected (This is
+passed as a return code from the first program.  Look at the alias for
+'softmenu' for details.)  soft-menu-change then reloads the group from the
+database file, and finds the one that was selected.  It outputs the shell
+code necessary for the change, which is then sourced as part of the alias.
+The last operation is very much the same as the one done for 'soft' and
+'softcheck'
+
+=head2 The softenv-load.* files
+
+These are simply shell scripts.  However, some parts of these might be
+complicated, so this section is here to describe some of the things that
+happen.  There is one for each of csh and sh, however, they are formatted
+as similarly as possible, and only the csh style will be used for examples
+here.
+
+The following line magically grabs the settings from the config_file,
+which is default to softenv.config.pl.  Most of the work done is changing
+the perl definitions to shell definitions.
+
+  eval `grep '^\$' $config_file | sed -e 's/\$\W*/set /'`
+
+The softcheck alias is the next big chunk of code.  In sh, it is a
+function, and in csh, it is an alias.  Just like resoft, it uses an
+inplace variable, but unlike resoft, it runs soft-msd also.  Just trust
+that it does the right thing.
+
+Then the environment checking occurs.  If there is no home dir, and if
+there is a .software or .software-beta file, and if there is no SOFTENVRC
+file.  There are usually warnings for these, and if it fails at trying to
+create a default SOFTENVRC, it warns the user.
+
+The time conditions are checked, and the variable runmsc is set.  Then,
+soft-msc is run, and the return values are examined, and warnings or
+errors are printed.
+
+Finally, if runcache is set, the cache file is sourced, then the variables
+used are unset, and the program is done.
+
+=head2 Features of SoftEnv and how they work.
+
+This section explains many of the features available in this version of 
+SoftEnv and how they are made possible.  This is intended to help future 
+programmers of this software understand it and make it easy for them.
+
+=over
+
+=item Macros
+
+There is not much special about macros.  They act pretty much as you would 
+expect them too.  First of all, they are defined in the db file like so:
+
+ (@default) 
+ {
+   {desc: "The recommended and complete path settings."}
+
+   @system-paths
+   +default-environment
+   @default-applications
+ }
+
+That should be self-explanatory.  Then, soft-msd takes care of translating it 
+and putting it into the compiled database format.  This is done simply by 
+parsing the (@macro) block once it is found in the file. That format looks 
+like this:
+
+  MACRO:@default->@system-paths +default-environment @default-applications
+
+Macros are architecture-independent, so to speak.  They have the same keywords 
+included for each architecture.  However, the individual keys will be 
+different, which is the main purpose behind SoftEnv.
+
+Then, if a user puts @default into their SOFTENVRC file, soft-msc reads it, and 
+then during pass 2, it expands it into the individual keywords.  Look at the 
+soft-msc section to understand what the different passes do.  After that, 
+macros are forgotten and it is just treated as a bunch of keywords.
+
+Macros can only be defined by the administrators in the soft.db file or other 
+similar file.  They cannot be autogenerated by soft-mad.
+
+=item Macro Architectures
+
+Architectures can be specified for macros, like so:
+
+  (@default-for-sun4) {
+    {arches: sun4}
+
+    etc...
+  }
+
+These are inserted into the database in the following way:
+
+  MACRO_ARCHES:<macro>-> <archlist>
+
+Then, in soft-msc, when a macro has architectures defined for it, it gets
+expanded into an if statement surrounding the macro for each architecture.
+It's as if the following was in the soft file:
+
+  if ARCH = sun4 then @default-for-sun4
+
+If there is more than one arch, then multiple lines like that are used.
+It's not very efficient, but it gets the job done.
+
+=item Ordered keywords
+
+The flag 'ordered' can be indicated for any keyword, which makes sure that
+the definitions for the keyword are always added in the same order they
+were defined in.
+
+The hard part of this is defining this in the database file.  However, a
+hack is used, by defining a variable SOFT_VAR_ORDER, which lists the order
+of the variables.
+
+If this variables exists when soft-msc (or soft-dec or soft-menu-change) is
+analyzing the variable, then the array of keywords is put into that order.
+
+Also, in soft-msc, when the environment variables are grouped up for
+addition, this breaks that up.  Instead of just an 'add' statement in the
+psuedocode, it is a 'nontrivialadd' statement, which is also used by
+econs.  In that respect, it works the same as an econ, in that it has its
+own special section in the cache file for defining the application.
+
+=item Removals
+
+Removals are the run-time removal of certain keywords.  They are necessary for 
+the following reason:  Say an anxious user wants to use the new version of 
+gcc, say gcc-2.1.  The default gcc is 1.5, and that is included in the macro 
+@default.  So the administrators install the software, and have a software key 
+for it, +gcc-2.1.  Now the user goes to edit his SOFTENVRC file, and puts this in:
+
+  @default
+  +gcc-2.1
+
+To simplify things, we can assume the rest of the keys in @default don't 
+matter, so in effect, this is the case:
+
+  +gcc-1.5
+  +gcc-2.1
+
+Now, when the user logs in, since gcc-1.5 is first in the PATH, he will get 
+the gcc-1.5 executable.  He can simply switch the statements, which will work 
+in the above case, but not this one:  If gcc has another environment variable 
+to set, say GCC_LIBDIR, the user will get the PATH for gcc-1.5 and the
+GCC_LIBDIR for gcc-2.1  That is _bad_  So, a way to remove a keyword is
+necessary.  The first method thought of was to include a remove tag in
+the definition for gcc-2.1 that says to remove gcc-1.5.  I will not go
+into detail about the mess that this creates, I will just give you an
+example.  The mess is caused mainly because users can also use simple if
+statements in their SOFTENVRC.  Like so:
+
+  if ARCH=sun4 +gcc-2.1
+  @default
+  if ARCH=linux +gcc-2.5
+  ir HOST=gaea +gcc-1.2.3
+
+You can just think about the logic problems involved in that improbable
+situation.
+
+So a new less complex method was introduced on the basis that removes are
+only a problem with macros.  So a syntax was defined that will remove a
+keyword from a macro definition.
+
+Removals are then only supported in the SOFTENVRC file.  A user can then do 
+the following:
+
+  @remove +gcc-1.5
+  @default
+  +gcc-2.1
+
+Therefore, the keyword can be thrown out near the beginning of the
+execution of soft-msc, and all is well.  Specifically, in pass2, when the
+macros are extracted, the removes are detected and are in operation when
+they are found in the file.  In other words, a @remove statement only
+affects the macros defined after it.  This greatly simplifies the code
+needed for soft-msc, and allows us as the coders to breathe a sigh of
+relief.
+
+=item Conditional Lines
+
+A conditional is written in the following way in the SOFTENVRC file:
+
+if <variable> = <value> then <entry>
+
+Examples include:
+
+  if HOSTNAME = fire then +gcc-2.1
+  if ARCH = solaris-2 then @default
+
+The conditionals are parsed in pass1.  The whole line is thrown into one
+keyword.  The hash for that keyword contains three extra fields that are
+defined for a conditional.  These are "cond", "test_lhs", and "test_rhs".
+cond is the type of conditional used, in this version, just equality is
+able to be tested.  test_lhs is the left hand side of the conditional, in
+other words, the environment variable to be tested.  test_rhs is the
+right hand side of the conditional, or the value needed for the line to be  
+executed.
+
+The conditionals are pulled apart during pass3.  Basically, when a
+keyword is found with a conditional around it, it goes into a subroutine
+that does the following.  If the execution is currently in an if
+statement, but the conditional is the same, it continues in that current
+if statement.  If the conditional is different, then the program closes
+the first statement, and starts up the new conditional by throwing in an
+"if"  Lastly, if the program wasn't currently in an if statement, it
+starts up a new statement.
+
+Nothing is done with conditionals during pass4.
+
+Pass5 takes the "if" and "endif" commands and turns them into real shell
+commands.  Take a look at the definitions at the end of soft-msc to see
+what they are turned into.
+
+=item Environment Conditionals (Econs)
+
+Environment Conditionals are defined by the administrators for the problem
+that a certain piece of software might have two different versions for the
+same architecture.  The biggest example of this is applications that have
+different executables for 64bit machines and 32bit machines.
+
+Econs are defined the following way in the soft.db file:
+
+  +totalview {
+    [linux] {
+      PATH /foo
+    }
+    [irix] {
+      PATH /bar
+    }
+    [irix (HOST=denali)] {
+      PATH /barden
+    }
+    [irix (UNAME=IRIX64)] {
+      PATH /bar64
+    }
+  }
+
+Order is important with the econs.  In this case, HOST=denali would be
+checked first.  Then UNAME=IRIX64 would be checked.  Lastly, the default
+PATH /bar would be taken.
+
+The econs are parsed and put into the compiled database by soft-msd.  The
+format is the following:
+
+ ENV:+default-environment:default:E1-BLAH=FOO:NNTPSERVER->bob.mcs.anl.gov
+ ENV:+default-environment:default:NO-ECON:NNTPSERVER->milo.mcs.anl.gov
+ ENV:+default-environment:default:NO-ECON:QWERTY->q
+ ENV:+default-environment:irix-6:E1-HOST=lemon:BLAH->FOO
+ ENV:+default-environment:irix-6:E2-HOST=yukon:BLAH->BAR
+ ENV:+default-environment:irix-6:NO-ECON:LM_LICENSE_FILE->/var/flexlm/
+ ENV:+default-environment:irix-6:NO-ECON:NNTPSERVER->milo.mcs.anl.gov
+ ENV:+default-environment:irix-6:NO-ECON:QWERTY->q
+
+Each architecture for each keyword has either "NO-ECON" or a conditional
+in the fourth section of the hash key.  The ordering is done with the E1,
+E2, etc. comments.  The first conditional to do is E1, and then E2 is
+checked.  Finally, the default are the variables with "NO-ECON" in the
+name.
+
+There is a slight problem when econs are defined for both the default case
+and for a certain architecture.  In detail, after each architecture has
+been parsed and put into the database, soft-msc goes through the default
+definitions and puts those in for each architecture, unless it is already
+defined.  See the section above on soft-msd for more detail on that
+process.  Anyways, if the default has an econ, say "E1-FOO=irix", and
+the architecture already has econs, the result might look like this:
+
+ ENV:+default-environment:irix-6:E1-HOST=lemon:BLAH->FOO
+ ENV:+default-environment:irix-6:E2-HOST=yukon:BLAH->BAR
+ ENV:+default-environment:irix-6:NO-ECON:LM_LICENSE_FILE->/var/flexlm/
+ ENV:+default-environment:irix-6:NO-ECON:NNTPSERVER->milo.mcs.anl.gov 
+ ENV:+default-environment:default:E1-FOO=irix:WWW_HOME->www.com.com
+ ENV:+default-environment:irix-6:E1-FOO=irix:WWW_HOME->www.com.com
+
+There is not an easy way to get around the fact that there are two econs
+both with E1 in the name.  I decided to get around this by not including
+the default econs in the architectures that already have econs defined for
+them.  I'm still thinking whether this is the correct thing to do.
+Anyways, in that case, the second E1 would not be included.
+
+After soft-msd is done with the econs, they should be correctly in the
+soft.dbc file.
+
+In soft-msc, when the database is read, the econs are put into a seperate
+hash, %econs, while the variables with "NO-ECON" are kept in the regular
+%db hash.
+
+To soft-msc, an econ looks exactly like a regular keyword until
+it references the database and finds out otherwise.  Therefore, an econ is
+the same as a normal add until pass3.  Pass3 detects whether the keywords
+are econs, and if so, puts a dumpenv into the stream, and then converts
+the add into an econadd.
+
+Pass4 then detects the econadds, and goes to a special subroutine,
+pass4_econadd, which converts the econadd into lots of conditional
+statements.  Specifically, a "switch" statement is put in at the
+beginning, and a "case" or "defcase" for each architecture.  It acts like
+a normal dumpenv at the beginning.  Then soft-msc checks the numbers on
+the econs in %econs, and properly puts out the correct words into the
+instruction stream.  "econif" is for the first econ that should be
+checked, "moreeconif" is for any more econs that need to be checked,
+"lasteconif" is for the default case for each architecture.  "endeconif"
+defines the end of the if statement.  Then each "append" and "set" for
+individual variables are done.
+
+Of course, while some architectures will have econs for a keyword, other
+architectures will not.  soft-msc detects this and skips all of the
+"econ*" commands in the instruction stream.  It simply outputs the
+"append"s and "set"s needed for that keyword.
+
+whew!
+
+=item 'soft add' and 'soft delete' operations
+
+These are a very new feature of SoftEnv, and the idea was taken from the
+'modules' package, a utility much like SoftEnv, but with less
+functionality.  'soft' as an alias which takes the operation and the
+keyword from the command line.  Specifically, it is called like so: 'soft
+add|delete <keyword>'  The arguments are then passed to soft-dec, which
+does the nitty-gritty work of finding the variables, testing conditions,
+and outputting the correct shell code.  The code is then passed back to
+the alias, which executes the code within an eval statement.  The user's
+environment is then changed.  This is an interesting feature of SoftEnv,
+but basically it operates like a resoft command on the keyword and the
+current environment.  Look at the above section on soft-dec to see more
+details about soft add and delete.
+
+=item Pointers in the database
+
+Pointers are used to make it a lot easier to define key in the database.
+The operations involving pointers are all done in soft-msd.  When soft-msd
+runs across a pointer definition, it stores it in a %pointers hash.
+Pointers are not resolved when they are first found because the key they
+are pointing to might not be defined yet.  After all of the database has
+been read in, then a routine is called to resolve these pointers.  This
+routine simply checks the architecture and econ of the definition of the
+pointer, and sees if there is a corresponding value already defined.  The
+routine spouts errors at that point if the pointer is more than one level
+deep, for that would just get really confusing and it is unnecessary.  It
+also spouts errors if there is no corresponding definition.  If everything
+is ok, it simply places everything from the corresponding key, arch, and
+econ into the place that had the pointer.
+
+=item softmenu stuff
+
+The program softmenu is implemented in an interesting manner.  'softmenu'
+is an alias, which calls two programs.  first, it calls soft-menu-select
+which displays the menu for that group, and does the majority of the
+error-checking.  This program then returns an return 'error' value
+corresponding to the number of the application that was selected.  The
+second program called from the softmenu alias is soft-menu-change, which
+actually affects the environment.  That program then outputs lines of
+shell code, similar to the way 'soft add' and 'soft delete' work.  That
+code is then executed in the environment.  The actual programs
+soft-menu-change and soft-menu-select are somewhat straightforward.
+
+=back
+
+=head2 Authors
+
+SoftEnv was created by Remy Evard, designed and developed by Remy Evard and
+Alan Bailey, and includes contributions from others.
+To contact the authors visit http://www.mcs.anl.gov/systems/software/.

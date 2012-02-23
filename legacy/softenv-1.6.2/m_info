@@ -1,0 +1,5 @@
+# Update this to reflect the program name and software version number 
+# in the scripts.
+#
+package: softenv
+version: 1.6.2

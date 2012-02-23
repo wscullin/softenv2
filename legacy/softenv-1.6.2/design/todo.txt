@@ -1,0 +1,116 @@
+The global to do list.
+
+Last updated:  15 March 2000
+
+Existing problem:
+- andrew's weird bash problems (linux-rh73, new xterms)
+  - gotta wait till i'm back at mcs, this is def some x wierdness
+  - this will even be hard to recreate
+- get the man pages to not say 'perl' but softenv.  pod2html needs a
+  --release option in the docs Makefile
+- pete's stale fh note (req 27155)
+
+For 1.4.1:
+* fix docs with regards to whatami
+* make whatami configurable
+
+For 1.4.0:
+* fix softenv-admin for disclaimers about source and command
+* the problem of unsetting some of the vars we just initialized
+* documentation (softenv-admin, softenv-code, softenv-policy
+    softenv-intro)
+  * ordered
+  * macro arch delimiters
+  * macros allowed in soft add/soft delete
+  * source command
+* stuff for arch-conditional macros in other files (soft-dbq,
+  soft-menu-cha soft-dec)?
+* remember to do next ifs for SOFT_VAR_ORDER
+* check read_databases in each file for MACRO_ARCHES
+* stuff for ordered envvars in other programs (soft-dbq, soft-menu-cha
+  soft-dec)
+* if there are no env vars, the soft-dbq display still displays text
+* not display anything for nonlogin shells
+  * find out exactly what that means
+  * make sure -s is really silent?
+  * no, the errors are from the load file.  just check prompt in correct
+    places
+  * now only huge errors are displayed for nonlogin shells
+  * the happy medium
+* softenv now is never run as root and nothing will be displayed as root
+* fixed the problem of:
+  SoftEnv 1.3.0: updating your software environment, one moment...
+  $softname system error: weird environment.  are you root?
+  * it was using single quotes instead of double for some reason
+* have ordering in stanzas stay in that order
+  * issue with populating the defaults, because that is done after
+  * assign all econs as 1xxx?
+  * assign defaults as negative numbers
+  * nope, just a cheatin' SOFT_VAR_ORDER variable
+* have @macros be allowed in 'soft add statements'
+  * will take a while to execute
+* making sure macros have descriptions
+* a source command, to get csh/sh as necessary
+  * this will fix the need for having GLOBUS_LOCATION defined elsewhere
+* conditionals for macros in the def file
+  * copy a lot of the code that exists for keywords
+  * soft-msc too, d'oh
+  * ok, this is hard.  Possibly just have a global condition for each use
+    of that macro, yip.
+  * done, but not very pretty.  Exactly like including everything inbetween
+    if ARCH checks
+
+Getting ready to launch.   Things to do:
+* When you run 'soft', you get 'soft-dec: Bad command line arguments'
+   A nice usage message would be better.
+* Install new manual pages.
+* Confirm that other admins know how to and can modify the softenv
+   database.  Write a howto file for that.
+
+
+Notes:
+*  Finish sun4 apps legacy directory
+
+Overall:
+*  Install for everyone.
+
+Randoms:
+*  Decide where the default environment really should be set.
+  Think about the /software stuff and where it should be.
+
+soft-msc:
+  Maybe do something with FLAGS?
+
+Complete docs/software-intro.pod:
+*  Why to use .soft
+*  The commands and the files
+*  The contents of .soft
+*  How you would typically use it
+*  More information
+
+===========================================================================
+Done
+===========================================================================
+16/02/99	Get an install on lotus and timewalk working.
+16/02/99	Rename entire system to SoftEnv.
+16/02/99	Rename compiled db to dbc
+16/02/99	Rename software-env.csh to soft-env.csh.
+16/02/99	Rename software-env.csh to softenv-load.csh (and sh)
+16/02/99	Rename msc to soft-msc in everything.
+16/02/99	Put soft-msd in everything.
+16/02/99	Rename.
+16/02/99	Versioned release.
+16/02/99	Install for real for a few others to try.
+19/02/99	Added a "-n" flag for checking without writing to soft-msd.
+13/07/1999      Got soft-msd to read multiple dbs and do db inclusion.
+13/07/1999	soft-msd now skips all but the first definition of things.
+28/07/1999	Alan - wrote softenv
+28/07/1999	Alan - wrote make-auto-db
+02/08/1999      Alan - finished %initialize completely in soft-msc & -msd
+03/08/1999      Alan - podified the docs and created the makefile
+03/08/1999      Alan - Commented the code, most of it already well commented
+03/08/1999      Alan - made make-auto-db slightly better
+09/09/1999      Alan - did lots of stuff that i forgot to write down here
+20/12/1999      Alan - did even more stuff that I forgot to write down
+08/09/2002      Alan - Added new stuff for version 1.4.0.  Everything I
+                added is described above

@@ -1,0 +1,196 @@
+#!!PERL_PATH!
+#
+# soft-mwl
+# The SoftEnv "make web log" program
+#
+# This is part of Msys, the MCS Systems Administration Toolkit
+# For more information, see http://www.mcs.anl.gov/systems/software/ .
+# 
+# Copyright (c) University of Chicago 1999.
+# See the COPYRIGHT file in the distribution for details on the copyright.   
+# 
+# ===========================================================================
+# 
+# Description:
+#  simply does an rlog command on the soft.db database, parses the
+#  revisions out and makes a nice webpage
+#
+# ===========================================================================
+# 
+# Authors and ID String:
+# 
+#   Alan Bailey, bailey@mcs.anl.gov
+# 
+# $Id: soft-mwl,v 1.10 2003/08/28 03:20:41 finley Exp $
+# 
+# ===========================================================================
+# 
+#  soft-mwl [-d]
+#
+#   -d               : turns on debugging
+#   -u -h --help     : helpful stuff
+#   -v --version     : version
+#
+# ===========================================================================
+#
+# Exit Codes:
+#
+# 0 on success
+#
+# ===========================================================================
+
+use Getopt::Std;
+
+use strict;
+
+use vars qw($program $debug $rlog_command @rlog);
+use vars qw($system_db $package_name $version $htmllog);
+
+&set_globals;
+
+@rlog = &parse_rlog;
+
+&print_page(@rlog);
+
+exit(0);
+
+
+
+# ===========================================================================
+# Subroutines
+# ===========================================================================
+
+sub set_globals {
+  push(@INC, 'SOFTENV_ETC_DIR');
+  require 'softenv.config.pl';
+
+  ($program = $0) =~ s:.*/::;
+  $rlog_command = "rlog -zLT $system_db";
+
+  &parse_commandline;
+
+}
+
+
+sub parse_commandline {
+  # Parse the arguments on the command line.  First it checks for
+  # --version and --help, then uses getopt to grab the other options.
+
+  use vars qw($opt_h $opt_u $opt_v $opt_d);
+
+  if ($ARGV[0] eq "--version") {
+    &version;  
+    exit(0);   
+  }
+  if ($ARGV[0] eq "--help") {
+    &usage;
+    exit(0);   
+  }
+  getopt('');
+  $debug = 1 if ($opt_d);
+
+  if (($opt_h) or ($opt_u)) {
+    &usage();
+    exit(0);
+  }
+  if ($opt_v) {
+    &version();
+    exit(0);
+  }
+}
+
+
+sub parse_rlog {
+  # The rlog command has been piped in
+  # this parses the rlog output into an array of hashes.
+
+  my(%revhash, @rlog);
+
+  print "Getting the rcs logs from $system_db...\n" if $debug;
+  open RLOG, "$rlog_command |" || 
+      die "$program: Unable to get the rcs logs for $system_db\n";
+  while (($_ = <RLOG>) !~ /^----------------------------/) {
+    # We don't want this first information from the output
+  }
+
+  while ($_ = <RLOG>) {
+    /^revision +(.*)$/;
+    $revhash{"version"} = $1;
+    $_ = <RLOG>;
+    /date\:\s+(\S*)\s+(\S*)\;\s+author\:\s+(\S*)\;/;
+    $revhash{"date"} = $1;
+    $revhash{"time"} = $2;
+    $revhash{"author"} = $3;
+    $revhash{"message"} = "";
+    while ((($_ = <RLOG>) !~ /^----------------------------/) and 
+        ($_ !~ /^=======================/)) {
+      $revhash{"message"} = $revhash{"message"}.$_."<br>";
+    }
+    push @rlog, { %revhash };
+    print "Parsed revision $revhash{version}, admin $revhash{author}\n" if $debug;
+  }
+  close RLOG;
+  @rlog;
+}
+
+
+sub print_page {
+  # We have all of the information from the RCS log command
+  # Now we open the file and print everything.
+  
+  my(@rlog, $revision) = @_;
+
+  open WEBPAGE, ">$htmllog" || 
+      die "$program: Cannot cannot create the webpage $htmllog\n";
+
+  print WEBPAGE "<html><head><title>Changes to the software database";
+  print WEBPAGE "</title></head><body>";
+  print WEBPAGE "<h2 align=center>Changes to the software database</h2>";
+
+
+  foreach $revision (@rlog) {
+    print WEBPAGE "------------<br>\n";
+    print WEBPAGE "<ul>\n";
+    print WEBPAGE "<li>Date: $revision->{date}<br>\n";
+    print WEBPAGE "<li>Time: $revision->{time}<br>\n";
+    print WEBPAGE "<li>Changed by: $revision->{author}<br>\n";
+    print WEBPAGE "<li>The administrator made the following comments:<br>\n";
+    print WEBPAGE $revision->{"message"}, "</ul><br><br>\n\n";
+  }
+
+  print WEBPAGE "</body></html>";
+  close WEBPAGE;
+}
+
+sub usage {
+  # Prints out the usage
+print <<"EOF";
+
+$program is part of $package_name version $version
+
+  Usage:
+    $program [-d]
+     -d             : turns on debugging
+     -u -h --help   : helpful stuff
+     -v --version   : version
+  
+  Purpose:
+     $program is part of the $package_name system.  This program
+     soft-mwl generates a webpage put into the etc/ directory based on the
+     changes to soft.db reported by the RCS rlog command.  RCS must be
+     used with soft.db for this to run.
+
+EOF
+}
+
+sub version {
+  # Prints out the program name, package, and version
+  # called whenever the correct argument is on the command line
+
+print <<"EOF";
+
+$program is part of $package_name version $version
+  
+EOF
+}
+

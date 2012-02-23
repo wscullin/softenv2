@@ -1,0 +1,43 @@
+=head1 NAME
+
+soft-msd - creates the compiled SoftEnv database from the admin databases
+
+=head1 DESCRIPTION
+
+This program soft-msd makes the compiled database from the user-friendly
+database files edited by the administrators.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft-msd. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+soft-msd [C<-d> C<-t> C<-n>]
+
+=over
+
+=item -d
+
+This option turns on debugging.
+
+=item -n
+
+This option checks the databases and pretends to write the compiled
+database, but doesn't actually.
+
+=item -t
+
+This creates the test database instead of the real soft.db
+
+=item -u -h --help
+
+Helpful messages
+
+=item -v --version
+
+Version
+
+=back

@@ -1,0 +1,58 @@
+#
+#   SoftEnv
+#   
+#   Copyright (c) University of Chicago 1999.  
+#   See the COPYRIGHT file in the distribution for details on the copyright.
+#   
+#       $Id: INSTALL,v 1.6 2003/08/28 03:55:01 finley Exp $
+#
+
+Installation Steps
+--------------------------------------------------------------------------------
+1)  A few things to know.
+
+    By default, SoftEnv is installed with /usr/local as it's PREFIX,
+    and /etc as it's ETC_PREFIX.  This means that the following are
+    your installed directory locations.  Each of these can be changed
+    by the corresponding variable indicated on the left.
+        
+        PREFIX              /usr/local
+        BIN_DIR             $PREFIX/bin
+        MAN_DIR             $PREFIX/share/man
+        DOC_DIR             $PREFIX/share/doc/softenv-$VERSION
+
+        ETC_PREFIX          /etc
+        SOFTENV_ETC_DIR     $ETC_PREFIX/softenv
+        PROFILE_DIR         $ETC_PREFIX/profile.d
+
+    For example, if you want to install SoftEnv in a standard way for
+    creating a package for a distribution, you might use:
+
+        make PREFIX=/usr install
+    
+    Or if you want _everything_ in a special location, including your
+    etc files, you could do a:
+
+        make PREFIX=/my/location ETC_PREFIX=/my/location/etc install
+
+
+2)  Now do your install.
+
+    a)  Standard install:
+
+        make install
+
+    b)  Recommended install for package creators:
+
+        make PREFIX=/usr install
+
+
+3)  Customize your softenv.db file.
+
+    You will find this file in SOFTENV_ETC_DIR (/etc/softenv by default).
+    Open it in your favorite editor, and you will find instructions at 
+    the top.
+
+
+Have fun!
+

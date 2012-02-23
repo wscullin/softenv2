@@ -1,0 +1,136 @@
+#
+#   SoftEnv
+#
+#   $Id: CHANGES,v 1.15 2007/03/12 17:21:41 navarro Exp $
+#
+#
+#   "SoftEnv" is part of Msys, the MCS Systems Administration Toolkit.
+#   For more information, see http://www.mcs.anl.gov/systems/software. 
+#
+#   Copyright (c) University of Chicago 1999.  
+#   See the COPYRIGHT file in the distribution for details on the copyright.
+#
+
+- Replace install w/ mkdir in Makefile
+- In scripts/install-N-sub, use installbsd if it's available (for AIX, Tru64)
+- Add missing export variables in profile.d/softenv.sh
+
+Version 1.6.2      28 February 2007    JP Navarro <navarro@mcs.anl.gov>
+-------------------------------------------------------------------------------
+- New ability create a new .soft for users by copying a template_softenv file
+  added to softenv-load.* scripts
+- Removed code to copy default .soft from profile.d scripts
+
+Version 1.6.1      12 January  2007    JP Navarro <navarro@mcs.anl.gov>
+-------------------------------------------------------------------------------
+- Fixed bug in 'soft add ..' where export was missing
+- Fixed bug in 'soft remove ..' where @removals var used should be %removals
+- New 'soft append ..' option to append to acumulator vars
+  Instead of 'soft add ..' preprend
+- New 'softenv -c' option to list in Condor ClassAd format
+- Make keyword -k searches case insensitive (John Valdes <valdes@mcs.anl.gov>)
+- Handle long keywords by printing two lines (John Valdes <valdes@mcs.anl.gov>)
+- New 'softenv -x' option to list in XML format 
+- Backed out the .soft to .softenvrc rename because it impacts users too much
+
+Version 1.6.0      1 September 2003    Brian Finley <finley@mcs.anl.gov>
+-------------------------------------------------------------------------------
+- De-MCSized as much as possible
+- Moved to a more standard build system (Makefile, etc.)
+- Install in a _more_ LSB compliant way (/etc/softenv, /usr/bin, etc.) (still
+  needs work, but didn't want to make too many changes at once)
+- Standard initialization files installed in /etc/profile.d as softenv.sh and
+  softenv.csh
+- User's run control file is now called ".softenvrc" instead of ".soft"
+- Implement JP Navarro's /etc/softenv/softenvrc.default idea -- the system 
+  administrator gets to create this file, which will be copied to the user's
+  .softenvrc file, if the user has no .softenvrc file.  This allows greater 
+  flexibility, and gets away from the previously hard coded default of 
+  "@default".
+- If user has no .softenvrc file, and the system administrator has not created
+  an /etc/softenv/softenvrc.default, exit cleanly without mucking up the 
+  environment.
+- Change file names from "soft<whatever>" to "softenv<whatever>"
+- Distribute rpms
+- Provide example databases
+- Heavily modified the STRING substitution during make-time tool.  Now
+  called install-N-sub.  Source files are no longer modified directly, but
+  are kept pristine.  String substitution changes are now made as files are
+  being installed.
+- Added the following architectures to softenv.config.pl:
+    linux-tg
+    linux-sles8-ia32
+    linux-sles8-ia64
+
+Version 1.4.2      26 October 2002     Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Fixed bug in zsh (and maybe bash) where the PATH would be cleared, and
+   then $ARCH would attempt to be set to /bin/whatami.  But whatami would
+   have problems because there is no path.
+
+Version 1.4.1      16 October 2002     Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Made all of SoftEnv not dependent on whatami.  An architecture
+   identification program is configurable in softenv.config.pl.  Also, the
+   first command in the cache files will set $ARCH to the output of this
+   program.
+ - Updated the docs to not mention MCS specific information (except
+   softenv-policy)
+
+Version 1.4.0      14 September 2002   Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Changed how the INITIALIZED and ACCUMULATED vars are done.  When
+   something is added at the beginning of the cache, they need to be
+   removed at the end.
+ - Added the ordered flag for keywords, so that the environment variables
+   or commands or source files can be executed in the order specified
+ - Added architecture specifications for macros, so that macros for some
+   architecture are not executed on other architectures
+ - Made it possible to use 'soft add' and 'soft delete' with macros
+ - Added the 'source' command, to source external files
+ - Documentation for the new features
+ - A few minor bugfixes
+ - A few documentation fixes
+
+Version 1.3.0      30 May 2000         Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Added soft-menu to give users a menu to choose from
+ - Added soft-dbq to query the database
+ - Fixed small bugs or annoyances
+ - Made better error messages
+ - Added != checking to econs and if statements
+ - use strict on everything :)
+ - debug setting
+
+Version 1.2.0      26 January 2000     Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Added database 'pointer' feature
+ - Added database 'command' feature
+ - Changed %initialize section to differentiate by architecture
+ - Added a "OLD LOCK FILE" error in soft-msc
+ - Yet another installation
+
+Version 1.1.0      20 December 1999    Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Added 'soft add|delete' functionality, changed docs
+ - Hopefully final installation
+
+Version 1.0.0      24 November 1999    Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Final Installation
+
+Version 0.9.7      1 November 1999     Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Rearranged packaging directory.  Not too visible in the release
+ - 'softcheck' database feature is in, same with the weblog.
+
+Version 0.9.5      October 1999        Alan <bailey@mcs.anl.gov>
+-------------------------------------------------------------------------------
+ - Most of the new features are into the code, such as econs and removals,
+   with an almost complete release
+ - Not a lot of documentation yet though
+
+Version 0.9.0      Early 1999          r'm <evard@mcs.anl.gov>
+-------------------------------------------------------------------------------
+
+ - Renamed Soft to SoftEnv, also with major changes in the code

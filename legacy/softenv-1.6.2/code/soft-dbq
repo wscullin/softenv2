@@ -1,0 +1,378 @@
+#!!PERL_PATH!
+#
+# soft-dbq
+# The SoftEnv "database query" program
+#
+# This is part of Msys, the MCS Systems Administration Toolkit
+# For more information, see http://www.mcs.anl.gov/systems/software/ .
+#
+# Copyright (c) University of Chicago 1999.
+# See the COPYRIGHT file in the distribution for details on the copyright.
+#
+# ===========================================================================
+#
+# Description:
+#   This program is run with one argument, either a key or a macro, and
+#   it returns any information about that key or macro contained in the
+#   softenv database.
+#
+# ===========================================================================
+#
+# Authors and ID String:
+#
+#   Alan Bailey, bailey@mcs.anl.gov
+#
+# $Id: soft-dbq,v 1.8 2003/08/28 03:20:40 finley Exp $
+#
+# ===========================================================================
+#
+#  soft-dbq [-t] [-a arch] keyword
+#
+#   keyword          : keyword or macro to query
+#   -a arch          : only gives information for that architecture
+#   -t               : use the test database
+#   -u -h --help     : helpful stuff
+#   -v --version     : version
+#
+# ===========================================================================
+#
+# Exit codes:
+#   0  Successful completion.
+#   1  Error
+#
+# ===========================================================================
+
+use Getopt::Std;
+use strict;
+
+use vars qw($arch $keyword %db $program);
+use vars qw($default_softfile $cacheprefix $database $test_database);
+use vars qw($package_name $version %supported);
+
+
+&set_globals;
+
+&print_header_information($keyword);
+
+if ($keyword =~ /^\@/) {
+  &print_all_macro_information($keyword);
+}
+if ($keyword =~ /^\+/) {
+  &print_all_keyword_information($keyword);
+}
+
+
+exit(0);
+
+
+# -----------
+# Subroutines
+# -----------
+
+sub set_globals {
+  # read the site defaults
+  push(@INC, 'SOFTENV_ETC_DIR');
+  require 'softenv.config.pl';
+
+  ($program = $0) =~ s:.*/::;
+
+  %db = &read_database($database);
+
+  # Set global variables and parse the commandline
+  &parse_commandline;
+
+}
+
+
+sub parse_commandline {
+  # Parse the commandline
+
+  use vars qw($opt_d $opt_t $opt_a $opt_h $opt_u $opt_v);
+
+  if ($ARGV[0] eq "--version") {
+    &version;
+    exit(0);
+  }
+  if ($ARGV[0] eq "--help") {
+    &usage;
+    exit(0);
+  }
+
+  getopt('a:');
+  $database = $test_database if ($opt_t);
+  if ($opt_a) {
+    $arch = $opt_a;
+  } else {
+    $arch = "all";
+  }
+  if ((!$supported{"$arch"}) and ($arch ne "all")) {
+    print "$program: Unknown architecture $arch given at command line\n";
+    exit(1);
+  }
+
+  if (($opt_h) or ($opt_u)) {
+    &usage();
+    exit(0);
+  }
+  if ($opt_v) {
+    &version();
+    exit(0);
+  }
+
+
+  if ($#ARGV > 0) {
+    print "$program: Bad command line arguments\n";
+    exit(1);
+  }
+  if (defined $ARGV[0]) {
+    $keyword = $ARGV[0];
+  } else {
+    print "$program: Bad command line arguments\n";
+    exit(1);
+  }
+  if ((! $db{ENV}{$keyword}) and (! $db{MACRO}{$keyword})) {
+    print "$program: Unknown keyword $keyword\n";
+    exit(1);
+  }
+}
+
+sub print_header_information {
+  my($keyword) = $_[0];
+  my($a);
+
+  print "\nThis is all the information associated with\n";
+  print "the key or macro $keyword.\n\n";
+  print "-------------------------------------------\n\n";
+  print "Name: $keyword\n";
+  print "Description: ", $db{"DESC"}{$keyword}, "\n";
+  if ($db{"FLAGS"}{$keyword} eq "") {
+    print "Flags: none\n";
+  } else {
+    print "Flags: ", $db{"FLAGS"}{$keyword}, "\n";
+  }
+  if ($db{"GROUP"}{$keyword} eq "") {
+    print "Groups: none\n";
+  } else {
+    print "Groups: ", $db{"FLAGS"}{$keyword}, "\n";
+  }
+  print "Exists on: ";
+  foreach $a (sort keys %supported) {
+    if (($db{"ENV"}{$keyword}{$a}) or ($db{"ENV"}{$keyword}{"default"})) {
+      print "$a ";
+    }
+    # We add a space ' ' here to make the matching work correctly
+    if (($db{"MACRO"}{$keyword}) and 
+        (($db{"MACRO_ARCHES"}{$keyword}.' ') =~ /$a /)) {
+      print "$a ";
+    }
+  }
+  print "\n\n";
+  print "-------------------------------------------\n\n";
+
+}
+
+sub print_all_macro_information {
+
+  print "  $keyword contains the following\n";
+  print "  keywords and macros:\n\n";
+  print "  $db{MACRO}{$keyword}\n\n";
+  print "-------------------------------------------\n\n";
+
+}
+
+sub print_all_keyword_information {
+
+  my($keyword) = $_[0];
+  my($a);
+
+
+  if ($arch eq "all") {
+    foreach $a (sort keys %supported) {
+      &print_all_keyword_arch_information($keyword, $a);
+    }
+  } else {
+    &print_all_keyword_arch_information($keyword, $arch);
+  }
+}
+
+sub print_all_keyword_arch_information {
+
+  my($e);
+  my($keyword, $arch) = @_;
+
+  return if (! $db{ENV}{$keyword}{$arch});
+
+  &print_all_keyword_arch_econ_information($keyword, $arch, "NO-ECON");
+  foreach $e (split / /,$db{"ENV"}{$keyword}{$arch}{"ECONS"}{"ORDER"}) {
+    &print_all_keyword_arch_econ_information($keyword, $arch, $e);
+  }
+
+}
+
+sub print_all_keyword_arch_econ_information {
+  my($keyword, $arch, $econ) = @_;
+  my($var, $val, $lhs, $rhs, %commands, $command);
+  my(%sources, $source);
+  my($not_var_count);
+  
+  print "On the $arch architecture,";
+
+  unless ($econ eq "NO-ECON") {
+    if ($econ =~ /^(.*)\!\=(.*)$/) {
+      $lhs = $1;
+      $rhs = $2;
+      print " if the variable $lhs does not equal \"$rhs\",";
+    } elsif ($econ =~ /^(.*)\=(.*)$/) {
+      $lhs = $1;
+      $rhs = $2;
+      print " if the variable $lhs equals \"$rhs\",";
+    }
+  }
+
+  print "\nthe following will be done to the environment:\n\n";
+
+  $not_var_count = 0;
+
+  foreach $var (sort keys %{ $db{"ENV"}{$keyword}{$arch}{$econ} }) {
+    $val = $db{"ENV"}{$keyword}{$arch}{$econ}{$var};
+    if ($var =~ /^command/) {
+      $commands{$var} = $val;
+      $not_var_count = $not_var_count + 1;
+    }
+    if ($var =~ /^source/) {
+      $sources{$var} = $val;
+      $not_var_count = $not_var_count + 1;
+    }
+  }
+  if (%commands) {
+    print "  The following commands will be executed:\n";
+    foreach $command (sort keys %commands) {
+      print "    $commands{$command}\n";
+    }
+  }
+  if (%sources) {
+    print "  The following files will be sourced:\n";
+    foreach $source (sort keys %sources) {
+      print "    $sources{$source}.[csh|sh]\n";
+    }
+  }
+
+  # If the not_var_count has not reached the total number of elements, that 
+  # means we have some actual variables, and thus we should display this 
+  # section.
+  if ($not_var_count < (scalar(keys %{ $db{"ENV"}{$keyword}{$arch}{$econ} })))
+      {
+    print "  The following environment changes will be made:\n";
+
+    foreach $var (sort keys %{ $db{"ENV"}{$keyword}{$arch}{$econ} }) {
+      $val = $db{"ENV"}{$keyword}{$arch}{$econ}{$var};
+      if ($db{"ACCUMULATE"}{$var}) {
+        $val = "\${$var}".$db{"ACCUMULATE"}{$var}.$val;
+      }
+      unless (($var =~ /^command/) or ($var =~ /^source/)) {
+        print "    $var = $val\n";
+      }
+    }
+  }
+
+  print "\n-------------------------------------------\n\n";
+
+}
+
+
+
+sub version {
+  # Version
+print <<"EOF";
+
+$program is part of $package_name version $version
+
+EOF
+}
+
+sub usage {
+  # Usage
+print <<"EOF";
+
+$program is part of $package_name version $version
+
+  Usage:
+    $program [-t] [-a arch] keyword
+     -a arch        : only gives information for that architecture
+     -t             : use the test database
+     -u -h --help   : helpful stuff
+     -v --version   : version
+     keyword        : keyword or macro to query
+
+  Purpose:
+     $program is part of the $package_name system.  It queries the
+     database for information about keys and macros.
+EOF
+}
+
+sub read_database {
+  # Read the software database, put it in a hash, return the hash.
+  # Instead of dropping P, M, E directly in, parse them into subhashes.
+  #
+  # Original routine in soft-msc
+  #
+  my($file) = @_;
+  my($x, $key, $val, %db);
+
+
+  open (DB, $file) || die "$program: Unable to open $file\n";
+  while(<DB>) {
+    $x = chomp;
+    if(! $x eq "\n") { $_ .= $x; }
+    ($key,$val)=split(/->/, $_, 2);
+
+    if($key =~ s/^MACRO\://) {
+      $db{MACRO}{$key}=$val;
+    }
+    if ($key =~ s/^MACRO_ARCHES\://) {
+      $db{MACRO_ARCHES}{$key}=$val;
+    }
+    if($key =~ s/^DESC\://) {
+      $db{DESC}{$key}=$val;
+    }
+    if($key =~ s/^ACCUMULATE\://) {
+      $db{ACCUMULATE}{$key}=$val;
+    }
+    if($key =~ s/^UNIQUE\://) {
+      $db{UNIQUE}{$key}=1;
+    }
+    if($key =~ s/^FLAGS\://) {
+      $db{FLAGS}{$key}=$val;
+    }
+    if($key =~ s/^GROUP\://) {
+      $db{GROUP}{$key}=$val;
+    }
+    if($key =~ /^INITIALIZE\:(.+):(\d+\:(.+)$)/) {
+      $db{INITIALIZE}{$1}{$2}=$val;
+    }
+    if($key =~ /^ENV:(.+):(.+):(.+):(.+)$/) {
+      $db{ENV}{$1}{$2}{$3}{$4}=&bracify($val);
+    }
+  }
+  close DB;
+  %db;
+}
+
+sub bracify {
+  # Take some string, like /home/foo/$ARCH and change it into
+  # /home/foo/${ARCH}.  This is done because, otherwise, shells can
+  # get fairly picky about what you append to such a string.
+  #
+  # We assume that only letters, numbers, and _ constitute variable
+  # names.
+  #
+  # Original routine in soft-msc
+  #
+  my($s) = @_;
+
+  while ($s =~ /\$[A-Za-z0-9_]+/) {
+    $s =~ s/\$([A-Za-z0-9_]+)/\$\{$1\}/;
+  }
+  $s;
+}
+

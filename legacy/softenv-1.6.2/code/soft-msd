@@ -1,0 +1,1101 @@
+#!!PERL_PATH!
+#
+# soft-msd
+# The SoftEnv "make software database" program.
+#
+#
+# This is part of Msys, the MCS Systems Administration Toolkit
+# For more information, see http://www.mcs.anl.gov/systems/software/ .
+# 
+# Copyright (c) University of Chicago 1999.
+# See the COPYRIGHT file in the distribution for details on the copyright.
+#
+# ===========================================================================
+#
+# Description:
+#  This program converts text software database from the admin-created
+#  databases to a terse format, for quicker parsing at login time. 
+#  Essentially it reads "soft.db" and possibly other ".db" files and
+#  creates "soft.dbc".  This will either be run by hand by an admin or
+#  automatically in a cron job.  Errors should be printed to stdout.
+#
+# ===========================================================================
+#
+# Authors and ID String:
+#
+#   Remy Evard, evard@mcs.anl.gov
+#   Alan Bailey, bailey@mcs.anl.gov
+#
+# $Id: soft-msd,v 1.17 2003/08/28 03:20:41 finley Exp $
+# 
+# ===========================================================================
+#
+#  soft-msd [-d -t -n]
+#
+#   -d               : turn on debugging
+#   -n               : check, but don't write
+#   -t               : use test database
+#   -u -h --help     : helpful stuff
+#   -v --version     : version
+#
+# ===========================================================================
+#
+# Exit Codes:
+#
+# 0 on success
+#
+# ===========================================================================
+
+
+use Getopt::Std;
+use strict;
+
+use vars qw($debug $flag_no_write $program %env @quotes @lines @tokens);
+use vars qw($token_line @databases $current_db);
+use vars qw($package_name $version $system_db $database $dbpath %supported);
+use vars qw($auto_db $beta_db $test_database %pointers %db);
+use vars qw($commandcount $sourcecount);
+
+&set_globals();
+&read_databases();
+if(&check_for_errors()) {
+  print "Not writing database due to errors.\n";
+} else {
+  &write_database() unless($flag_no_write);
+}
+exit(0);
+
+
+# ===========================================================================
+# Setting globals - done this way to document them
+# ===========================================================================
+
+sub set_globals {
+  use vars qw($opt_d $opt_n $opt_h $opt_u $opt_t $opt_s $opt_v);
+  push(@INC, 'SOFTENV_ETC_DIR');
+  require 'softenv.config.pl';     #get the config file
+
+  $debug = 0;
+  ($program = $0) =~ s:.*/::;
+
+  if ($ARGV[0] eq "--version") {
+    &version; 
+    exit(0);
+  }
+  if ($ARGV[0] eq "--help") {
+    &usage;
+    exit(0);
+  }
+  getopt('');
+  $debug = 1 if($opt_d);
+  $flag_no_write = 1 if($opt_n);
+  $database = $test_database if($opt_t);
+
+  if($opt_h || $opt_u || $#ARGV >= 0) {
+    &usage();
+    exit(0);
+  }
+  if ($opt_v) {
+    &version;
+    exit(0);
+  }
+  # The env hash is used to store the database that we will eventually
+  # print.
+  %env = ();
+
+  # The quotes stack is used to store strings inside of quotes.
+  @quotes = ();
+
+  # The lines being read in from the current db file are stored in lines.
+  @lines = ();
+
+  # The tokens are stored in this array:
+  @tokens = ();
+  
+  # The current token's line number is stored in:
+  $token_line;
+
+  # Counts the number of commands in every database globally, used to
+  # differentiate between them.  Hackish, yes.
+  $commandcount = 1;
+
+  # Counts the number of source commands
+  $sourcecount = 1;
+
+  # This list of database files to read is stored in: 
+  # @databases = ($system_db, $beta_db, $auto_db, "../etc/sun4-legacy-apps.db");
+  @databases = ($system_db);
+  # @databases = "../etc/test.db";
+}
+
+sub usage {
+print <<"EOF";
+
+$program is part of $package_name version $version
+
+  Usage:
+    $program [-t -d -n]
+     -d             : turn on debugging
+     -n             : check, but don't write
+     -t             : use test database
+     -u -h --help   : helpful stuff
+     -v --version   : version
+
+  Purpose:
+     $program is part of the $package_name system.  It reads from an 
+     admin-created database and builds a compiled database.  It should
+     be used whenver the admin-created database is updated.  Run it with
+     the -n flag first to check for errors.
+
+EOF
+}
+
+sub version {
+print <<"EOF";
+
+$program is part of $package_name version $version
+  
+EOF
+}
+
+
+# ===========================================================================
+# Reading the database
+# 
+# We read the entire data, parse it internally, create a big hash with all
+# the data in it, and then hand that off to the write routine at the end.
+# ===========================================================================
+
+sub read_databases {
+  # Pop the next database to read from the array of databases.   We do
+  # it this way because we might add new databases to the list while
+  # running.
+  my($db, $key, $arch, $econ);
+  
+  while($db = pop(@databases)) {
+    $current_db = $db;
+    &read_softdb($db);
+  }
+
+  print "\n\n" if $debug;
+  &resolve_pointers();
+  print "\n\n" if $debug;
+  &expand_defaults();
+  print "\n\n" if $debug;
+  &write_to_env();
+}
+
+sub add_database {
+  # Add a database to the list of databases to parse.  Assume blindly that
+  # it will be in the same directory as the other databases.  Possibly
+  # fix this later if necessary by looking for a leading /, but really
+  # we do want all the databases to be in the same directory.
+  #
+  my($db) = @_;
+
+  push(@databases, "$dbpath/$db");
+}
+
+
+sub read_softdb {
+  # Open the database.  Find all the valid lines and pass them off to
+  # the line parser, which parses them a bit and adds them to @lines.
+  # Once everything has been read, call &parse().
+  #
+
+  my($db) = @_;
+  my($linenum);
+
+  if(! -r $db) {
+    die "$program: Unable to read $db\n";
+  }
+
+  if(!open(DBFILE, "$db")) {
+    die "$program: Unable to open $db\n";
+  } elsif($debug) {
+    print "Opened $db for reading\n";
+  }
+  
+  # Clean out the lines and quotes records, so that we can fill them up
+  # as we read this file.
+  @lines = ();
+  @quotes = ();
+  @tokens = ();
+  $linenum = 0;
+
+  while(<DBFILE>) {
+    chomp;
+    $linenum++;
+    next if(/^\s*$/);                 # skip blank lines
+    next if(/^\s*\#/);                # skip lines starting with #
+
+    &read_line($_, $linenum);
+  }
+  close DBFILE;
+
+  &tokenize();
+  &parse();
+}
+
+sub read_line {
+  my($line, $linenum) = @_;
+  
+  # If there are two quotation marks in the line, then remove the stuff
+  # in that line so that it doesn't get in the way of parsing it.
+  # The first and last quotes are used, anything in the middle goes.
+  # Escaping the quotes won't help.
+  if($line =~ /\".*\"/) {
+    $line =~ /^([^\"]*)\"(.*)\"([^\"]*)$/;
+    push(@quotes, $2);
+    push(@lines, &line_op($1 . ">>>" . $#quotes . "<<<" . $3, $linenum));
+  } else {
+    push(@lines, &line_op($line, $linenum));
+  }
+}
+
+sub line_op {
+  my($line, $n) = @_;
+  my(%foo);
+  
+  $foo{"line"} = $line;
+  $foo{"number"} = $n;
+
+  \%foo;
+}
+
+
+# ===========================================================================
+# Parsing
+#
+# A sort of grammer for a database is:
+#
+# Statement:
+#  (+keyword)      "description" { <keyword entry> }
+#  (@macro)        "description" { <macro entry> }
+#  (%accumulate)   { <accum entry> }
+#  (%databases)    { <databases entry> }
+#  (&initialize)   { <initialization variables> }
+#
+# (This needs to be a bit updated.)
+#
+# We read the token stream to parse the db.
+
+
+sub parse {
+  # Switch on the first token in the queue, which should be
+  # a keyword, a macro, or a special instruction.  Pop that
+  # off and call the appropriate parse routine.
+  #
+  my($t);
+
+  while(1) {
+    $t = &next_token();
+    return if(&end_token_q($t));
+
+    print "Found major token section: $t\n" if($debug);
+
+    if($t =~ /^\((\+.+)\)$/) {
+      &parse_keyword($1);
+    } elsif($t =~ /^\((\@.+)\)$/) {
+      &parse_macro($1);
+    } elsif($t eq "(%accumulate)") {
+      &parse_accumulate();
+    } elsif($t eq "(%databases)") {
+      &parse_databases();
+    } elsif($t eq "(%initialize)") {
+      &parse_initialize();
+    } else {
+      &parse_error($t);
+    }
+  }
+}
+
+sub parse_initialize {
+  my($initcount);
+  my($db, @t, $initname, $initvalue, $arch);
+
+  &eat_token("{");
+
+  while (($arch = &next_token) ne "}") {
+    if ($arch =~ s/^\[(.*)$\]/\1/) {
+      $arch = "default" if ($arch eq "");
+      if ((! $supported{$arch}) and ($arch ne "default")) {
+        &parse_error($arch);
+      }
+      $initcount = 1;
+    } else {
+      &parse_error($arch);
+    }
+    if (&next_token() ne "{") {
+      &parse_error($arch);
+    }
+
+    @t = &until_token("}"); 
+    if(!($#t % 2)) {
+      &parse_error($t[($#t)]);
+    }
+    while (@t) {
+      $initname = shift @t;
+      $initvalue = shift @t;
+      $env{"INITIALIZE:$arch:$initcount:$initname"} = $initvalue;
+      print "Adding $arch initialize key $initname as $initvalue\n" if($debug);
+      $initcount++;
+    }
+  }
+}
+
+
+sub parse_accumulate {
+  my($token);
+  my($var, @t);
+
+  &eat_token("{");
+
+  do {
+    # This first token can legally either be a variable or the last closing 
+    # brace for the accumulate section.
+    $var = &next_token();
+    if($var eq "}") {
+      return;
+    }
+
+    # It must have been a variable, so see if the variable has arguments
+    # associated with it.  If so, set the unique and accumulate according
+    # to the arguments.  If not, give them the default values of "uniquify"
+    # and "separate with a colon".
+    if(&peek_token() eq "{") {
+      &next_token();
+      @t = &until_token("}");
+
+      &parse_error($var) if ($#t != 1);
+
+      if($t[0] =~ /^n/i) {
+        $env{"UNIQUE:$var"} = 0;
+      } elsif ($t[0] =~ /^y/i) {
+        $env{"UNIQUE:$var"} = 1;
+      } else {
+        &parse_error($t[0]);
+      }
+
+      $env{"ACCUMULATE:$var"} = $t[1];
+
+    } else {
+      $env{"UNIQUE:$var"} = 1;
+      $env{"ACCUMULATE:$var"} = ":";
+    }
+  } while(1);
+}
+
+
+
+sub parse_databases {
+  my($db, @t, $d);
+
+  # adds another database to the list to be sorted through
+
+  &eat_token("{");
+
+  @t = &until_token("}");
+  foreach $db (@t) {
+    print "Adding database $db to the set of dbs to read.\n" if($debug);
+    &add_database($db);
+  }
+}
+
+sub parse_macro {
+  my($macro) = @_;
+  my(@t, $value);
+
+  &eat_token("{");
+
+  if (! $env{"DESC:$macro"}) {
+    $env{"DESC:$macro"} = "No description set.";      # yet
+  }
+
+  # Initialize the macro_arches with all of the arches
+  if (! $env{"MACRO_ARCHES:$macro"}) {
+    $env{"MACRO_ARCHES:$macro"} = join(' ', keys(%supported));
+  }
+
+  # Add it to the environment unless it's already there.
+  if($env{"MACRO:$macro"}) {
+    print "Warning:\n";
+    print " Macro $macro is defined more than once.  Only using the 1st def.\n";
+    &parse_options($macro, 0);
+    @t = &until_token("}");
+  } else {
+    &parse_options($macro, 1);
+    @t = &until_token("}");
+    $value = join(" ", @t);
+    $env{"MACRO:$macro"} = $value;
+  }
+}
+
+sub parse_keyword {
+  my($key) = @_;
+  my($desc, $flag, $value, $exists);
+
+  &eat_token("{");
+
+  if ($env{"DESC:$key"}) {
+    if (&parse_options($key, 0)) {
+      &parse_architectures($key, 1);
+    } else {
+      &parse_architectures($key, 0);
+    }
+  } else {
+    $env{"DESC:$key"} = "No description set.";      # yet
+    &parse_options($key, 1);
+    &parse_architectures($key, 1);
+  }
+
+  &eat_token("}");
+}
+
+
+sub parse_options {
+  my($key, $really_add) = @_;
+  my($desc, $flags, $groups, $option, @args);
+  my($arches);
+
+  # This routine parses the options that can exist right at the beginning
+  # of a keyword definition.  More specifically, DESC and FLAGS
+  # It simply adds them to %env when it finds them.
+
+  while(&peek_token() eq "{") {
+    &eat_token("{");
+    $option = &next_token();
+
+    if($option =~ /^desc/i) {
+      @args = &until_token("}");
+      $desc = join(" ", @args);
+    } elsif($option =~ /^flag/i) {
+      @args = &until_token("}");
+      $flags = join(" ", @args);
+    } elsif ($option =~ /^group/i) {
+      @args = &until_token("}");
+      $groups = join(" ", @args);
+    } elsif ($option =~ /^arches/i) {
+      @args = &until_token("}");
+      $arches = join(" ", @args);
+    } else {
+      &parse_error($option);
+    }
+  }
+
+  # This next block changes the purpose of this routine.  If, while
+  # parsing the flags, it is determined this key should be used instead of
+  # the one present, $really_add is changed, which affects the outcome of
+  # this routine and the next.
+
+  if (($really_add == 0) and ($key =~ /^\+/)) {
+    if ($flags =~ /auto/) {
+      $really_add = 0;
+    } elsif ($env{"FLAGS:$key"} =~ /auto/) {
+      $really_add = 1;
+    } else {
+      print "Warning:\n";
+      print " Keyword $key is defined more than once.  Only using the 1st def.\n";
+      $really_add = 0;
+    }    
+  }
+  if ($really_add) {
+    if ($desc) {
+      print "  Adding DESC:$key -> $desc\n" if($debug);
+      $env{"DESC:$key"} = $desc;
+    }
+    if ($flags) {
+      print "  Adding FLAGS:$key -> $flags\n" if($debug);
+      $env{"FLAGS:$key"} = $flags;
+    }
+    if ($groups) {
+      print "  Adding GROUP:$key -> $groups\n" if ($debug);
+      $env{"GROUP:$key"} = $groups;
+    }
+    if ($arches) {
+      print "  Adding MACRO_ARCHES:$key -> $arches\n" if ($debug);
+      $env{"MACRO_ARCHES:$key"} = $arches;
+    }
+    return(1);
+  } else {
+    return(0);
+  }
+}
+
+
+sub parse_architectures {
+  # This routine is given a keyword and is at the point in the parsing
+  # where it should be looking at one or more architecture strings.
+  # 
+  # Hand each of those off to a parser, which reads the values into
+  # an environment.  Then, copy those environments into the DB hash.
+  #
+  # Note that at this point, the strategy is to take any values assigned
+  # to the "default" architecture and to apply them to every architecture
+  # rather than to work out the default values when building the cache.
+
+  my($key, $really_add) = @_;
+  my($archenvref) = ({});
+
+  # Buzz through each architecture, storing the values found in the
+  # archenv, an environment collection. 
+  while (&peek_token() ne "}") {
+    $archenvref = &parse_architecture($key, $archenvref, &until_token("}"));
+  }
+
+  # Now put the values into the env that will be written into the new db.
+  if($really_add) {
+    &archenv_to_db($key, $archenvref);
+  }
+}
+
+sub parse_architecture {
+  # This routine is handed an array of tokens, starting with an
+  # architecture token:
+  #  [],  [sun4], or [sun4|solaris]
+  # followed by relevant info for that arch.
+  #
+  my($key, $archenv, @tokens) = @_;
+  my($t, $arch, @vars, $a);
+  my($econ, $number);
+
+  $t = shift(@tokens);
+  if($t !~ /^\[(.*)\]$/) {
+    &parse_error($t);
+  }
+  
+  $arch = $1;
+  $arch = "default" if ($arch eq "");
+  if ($arch =~ /(\S*)\s*\((.*)\)$/) {
+    $arch = $1;
+    $arch = "default" if ($arch eq "");
+    $econ = $2;
+    if (($econ !~ /(.*)=(.*)/) and ($econ !~ /(.*)!=(.*)/)) {
+      &parse_error($econ);
+    }
+  } else {
+    $econ = "NO-ECON";
+    # and arch stays the same
+  }
+
+  if ($econ ne "NO-ECON") {
+    foreach $a (split (/\|/, $arch)) {
+      $a = "default" if ($a eq "");
+      if ((! $supported{$a}) and ($a ne "default")) {
+        &parse_error($arch)
+      }
+      if ($archenv->{$a}{"ECONS"}) {
+        $archenv->{$a}{"ECONS"}{"ORDER"} = $archenv->{$a}{"ECONS"}{"ORDER"} . " $econ";
+      } else {
+        $archenv->{$a}{"ECONS"}{"ORDER"} = $econ;
+      }
+    }
+  }
+
+  print "  Found keyword $key, architecture $arch" if ($debug);
+  if ($debug) {
+    if ($econ ne "NO-ECON") {
+      print ", with conditional $econ";
+    }
+    print ".\n";
+  }
+
+  # Get rid of the first "{".
+  if(($t = shift(@tokens)) ne "{") {
+    &parse_error($t);
+  }
+  
+  # Now we have an array with, theoretically, a set of key value pairs.
+  # Turn that into an archenv.
+  if($#tokens >=0) {
+    $archenv = &parse_envars($key, $arch, $econ, $archenv, @tokens);
+  }
+  $archenv;
+}
+
+sub parse_envars {
+  #
+  # We've parsed this into an array:
+  #    PATH foo
+  #    MANPATH bar
+  #    xx yy
+  # Slip that into an associate array and then store it with the arch string.
+  # 
+  my($key, $arch, $econ, $archenv, @vars) = @_;
+  my($a, $i, $v);
+
+  if(!($#vars % 2)) {
+    &parse_error($vars[($#vars)]);
+  }
+
+  foreach $a (split(/\|/, $arch)) {
+    $a = "default" if ($a eq "");
+
+    for ($i = 0; $i < scalar(@vars); $i = $i+2) {
+      $v = $vars[$i];
+      if ($v eq "pointer") {
+        if ($i != 0) {
+          print "Warning: \n";
+          print " key '$key', architecture '$a' is a pointer but also\n"; 
+          print " defines its own variables.  Ignoring the pointer, but\n";
+          print " you may want to look at it...\n";
+        } else {
+          $pointers{$key}{$a}{$econ} = $vars[$i+1];
+          if ($debug) {
+            print "  Found a pointer from $key, $a, $econ to $vars[$i+1]\n";
+          }
+        }
+      } else {
+        if (length($archenv->{"$a"}{"$econ"}{"pointer"})) {
+          print "Warning: \n";
+          print " key '$key', architecture '$a' is a pointer but also\n";
+          print " defines its own variables.  Ignoring the pointer, but\n";
+          print " you may want to look at it...\n";
+          next;
+        }
+        if (length($archenv->{"$a"}{"$econ"}{"$v"})) {
+          print "Warning: \n";
+          print " key '$key', architecture '$a' has two definitions\n";
+          print " for the variable $v.  Using the last one, but you may\n";
+          print " want to look at it...\n";
+        }
+        if ($v eq "command") {
+          $v = $v . $commandcount;
+          $commandcount++;
+        }
+        if ($v eq "source") {
+          $v = $v . $sourcecount;
+          $sourcecount++;
+        }
+        $archenv->{"$a"}{"$econ"}{"$v"} = $vars[$i+1];
+
+        if ($env{"FLAGS:$key"} =~ /ordered/) {
+          # Add the var to the ordered list
+          if ($archenv->{"$a"}{"$econ"}{"SOFT_VAR_ORDER"}) {
+            $archenv->{"$a"}{"$econ"}{"SOFT_VAR_ORDER"} = 
+                $archenv->{"$a"}{"$econ"}{"SOFT_VAR_ORDER"} . ' ' . $v;
+          } else {
+            $archenv->{"$a"}{"$econ"}{"SOFT_VAR_ORDER"} = $v;
+          }
+        }
+      }
+    }
+  }
+  $archenv;
+}
+
+sub archenv_to_db {
+  my($key, $archenv) = @_;
+  my($arch, $var, $econ, $defvar);
+
+  # For each architecture that was listed with a variable, *including* the
+  # the default architecture, set those values in the env hash.  If the
+  # value was "!", skip that one.
+  #
+  foreach $arch (keys(%{$archenv})) {
+    foreach $econ (keys(%{$archenv->{$arch}})) {
+      foreach $var (keys(%{$archenv->{$arch}{$econ}})) {
+        $db{"$key"}{"$arch"}{"$econ"}{"$var"} = $archenv->{$arch}{$econ}{$var};
+        if($debug) {
+          print "  Adding $key, $arch, $econ, $var -> ",
+              $archenv->{$arch}{$econ}{$var},"\n"
+        }
+      }
+    }
+  }
+}
+
+sub parse_error {
+  my($token) = @_;
+
+  die ("Parse error at line $token_line of $current_db,\n" . 
+      "somewhere around this word:\n" . "$token\n");
+}
+
+
+# ===========================================================================
+# Token stuff
+#
+# The input file is simply easier to deal with as a stream of tokens than
+# as a bunch of lines.  These routines either create the tokens or deal
+# with them as the parser walks through the input.
+#
+# tokenize() is called after we've read in the entire database, having
+# removed comments, blank lines, and all strings embedded in quotes.
+# The remaining contents are stored in @lines.
+#
+# Tokens are: things in parenthesis
+#             things separated by white space
+#             {
+#             }
+#
+# ===========================================================================
+
+sub tokenize {
+  # Read through @lines (which contains the useful lines of the db)
+  # and turn it into a stream of tokens in @tokens.
+
+  my($line, $e);
+  
+  foreach $line (@lines) {
+    $e = $line->{"line"};
+
+    while($e !~ /^\s*$/) {
+
+      # Word contained in parenthesis.
+      if($e =~ /^(\(.+\))(.*)$/) {
+	push(@tokens, &token_op($1, $line->{"number"}));
+	$e = $2;
+	next;
+      }
+
+      # Word contained in square brackets.
+      if($e =~ /^(\[.*\])(.*)$/) {
+	push(@tokens, &token_op($1, $line->{"number"}));
+	$e = $2;
+	next;
+      }
+      
+      # left brace
+      if($e =~ /^(\{)(.*)$/) {
+	push(@tokens, &token_op($1, $line->{"number"}));
+	$e = $2;
+	next;
+      }
+
+      # right brace
+      if($e =~ /^(\})(.*)$/) {
+	push(@tokens, &token_op($1, $line->{"number"}));
+	$e = $2;
+	next;
+      }
+
+      # white space - eat it
+      if($e =~ /^\s+(.*)$/) {
+	$e = $1;
+	next;
+      }
+      
+      # okay, then eat up until the end of the line, white space,
+      # or a special character
+      if($e =~ /^([^\{\}\[\]\s]+)(.*)$/) {
+	push(@tokens, &token_op($1, $line->{"number"}));
+	$e = $2;
+	next;
+      }
+
+      # We should never get here.
+      die("Error while parsing, around " . $line->{"number"});
+    }
+  }
+  push(@tokens, &token_op(-1, 0));
+}
+
+
+sub token_op {
+  # Build a token.  A token is a reference to an array with:
+  #  "token" - the string that is the token
+  #  "number" - the line number the token was on
+  #
+  my($token, $number) = @_;
+  my(%t);
+
+  if($token =~ /^(.*)>>>(.+)<<<(.*)$/) {
+    $token = $1 . $quotes[$2] . $3;
+  }
+  
+  $t{"token"} = $token;
+  $t{"number"} = $number;
+  \%t;
+}
+
+
+# ---------------------------------------------------------------------------
+# Token reading routines
+# ---------------------------------------------------------------------------
+      
+sub until_token {
+  # Return an array of tokens that ends with a given token.
+  # Don't include the target token in the array.
+  #
+  my($target) = @_;
+  my($token, @t);
+
+  while($token = &next_token()) {
+    if(&end_token_q($token)) {
+      &parse_error("end of file");
+    }
+    return @t if($token eq $target);
+    push(@t, $token);
+  }
+}
+
+sub end_token_q {
+  # Is this the end token?
+  #
+  my($token) = @_;
+
+  $token == -1;
+}
+
+
+sub next_token {
+  # Get the next token from the list of tokens (@tokens).
+  # If we get an EOF, it's a surprise, so trigger an error.
+  #
+  # Set $token_line as a global, and return the token as a string.
+  #
+  my($token);
+
+  $token = shift(@tokens);
+  if(!defined($token)) {
+    die "Parse error while reading database - surprising end of file";
+  }
+  $token_line = $token->{"number"};
+  $token->{"token"};
+}
+
+sub peek_token {
+  # Peek at the next token, but don't return it.  Don't trigger errors
+  # on an EOF, don't set $token_line.
+
+  $tokens[0]->{"token"};
+}
+
+sub eat_token {
+  # Burn through tokens until we get to the one we're looking for.
+  #
+  my($desired) = @_;
+  my($token);
+
+  $token = &next_token();
+  if($token ne $desired) {
+    &parse_error($token);
+  }
+}
+
+# ===========================================================================
+# Expanding Defaults
+#
+# this is icky
+# ===========================================================================
+
+sub expand_defaults {
+  my($key, $var, $arch, $econ, @vararray);
+  my(@var_order);
+
+  # Now go through and populate all the known architectures with the
+  # default values.  Skip any variables where we have an explicit value.
+  #
+
+  # This first loop populates any architectures that weren't defined at all
+  # It populates it with the default, and any econs for the default
+  foreach $key (keys %db) {
+    foreach $arch (keys %supported) {
+      next if ($db{$key}{$arch});
+      foreach $econ (keys %{ $db{$key}{"default"} }) {
+        next if ($econ eq "NO-ECON");
+        foreach $var (keys %{ $db{$key}{"default"}{$econ} }) {
+          # This will copy over the SOFT_VAR_ORDER variable, if it exists, 
+          # which defines the order the variables should be set in.
+          $db{$key}{$arch}{$econ}{$var} = $db{$key}{"default"}{$econ}{$var};
+          if ($debug) {
+            print "Including $key, $arch, $econ, $var -> ",
+                $db{$key}{$arch}{$econ}{$var}," from default.\n";
+          }
+        }
+      }
+    }
+
+    # If nothing was defined for the default arch with no econ, there will be 
+    # no more population to do
+    next if (! $db{$key}{"default"}{"NO-ECON"});
+
+    # Determine the order to look at the variables from the SOFT_VAR_ORDER 
+    # variable, in the default arch and no econ.  However, we want this in 
+    # reverse, so we can append to the beginning of the resultant 
+    # SOFT_VAR_ORDER variable, and obtain the correct order.  That might make 
+    # sense.
+    if ($env{"FLAGS:$key"} =~ /ordered/) {
+      @var_order = reverse(split(/ /, $db{$key}{"default"}{"NO-ECON"}{"SOFT_VAR_ORDER"}));
+    } else {
+      @var_order = sort keys %{ $db{$key}{"default"}{"NO-ECON"} };
+    }
+
+    # Now, for every var defined in the default arch with no econ, these will 
+    # be spread to each arch and each econ, if need be.
+    foreach $var (@var_order) {
+      next if ($var eq "SOFT_VAR_ORDER");
+      foreach $arch ((keys %supported), "default") {
+        $db{$key}{$arch}{"NO-ECON"} = () if !($db{$key}{$arch}{"NO-ECON"});
+        foreach $econ (keys %{ $db{$key}{$arch} }) {
+          next if ($econ eq "ECONS");
+          next if ($db{$key}{$arch}{$econ}{$var});
+
+          # Add the key to the set
+          $db{$key}{$arch}{$econ}{$var} = 
+              $db{$key}{"default"}{"NO-ECON"}{$var};
+
+          # Add the key to the existing SOFT_VAR_ORDER
+          if ($env{"FLAGS:$key"} =~ /ordered/) {
+            $db{$key}{$arch}{$econ}{"SOFT_VAR_ORDER"} = $var . ' ' . 
+                $db{$key}{$arch}{$econ}{"SOFT_VAR_ORDER"};
+          }
+
+          if ($debug) {
+            print "Including $key, $arch, $econ, $var -> ",
+                $db{$key}{$arch}{$econ}{$var}," from default\n";
+          }
+        }
+      }
+    }
+  }
+}
+
+
+# ===========================================================================
+# Resolving Pointers
+#
+# this is icky
+# ===========================================================================
+
+sub resolve_pointers {
+  my($key, $newvar, $newecon, $newkey, $arch, $econ, $var, @vararray);
+
+  foreach $key (keys %pointers) {
+    foreach $arch (keys %{ $pointers{$key} }) {
+      foreach $econ (keys %{ $pointers{$key}{$arch} }) {
+        $newkey = $pointers{$key}{$arch}{$econ};
+        if ($pointers{$newkey}{$arch}{$econ}) {
+          print "Warning: \n";
+          print " key '$key', architecture '$arch', econ $econ points\n";
+          print " to a pointer.  Only one level of redirection is allowed.\n";
+          print " Ignoring this pointer, which means nothing will be defined.\n";
+          next;
+        } elsif ($db{$newkey}{$arch}{$econ}) {
+          foreach $var (keys %{ $db{$newkey}{$arch}{$econ} }) {
+            $db{$key}{$arch}{$econ}{$var} = $db{$newkey}{$arch}{$econ}{$var};
+            if ($debug) {
+              print "Resolving $key, $arch, $econ, $var ->",
+                  $db{$key}{$arch}{$econ}{$var}, " from a pointer\n";
+            }
+          }
+        } else {
+          print "Warning: \n";
+          print " key '$key', architecture '$arch', econ $econ points\n";
+          print " to key $newkey, which does not have the same specifications.\n";
+          print " Ignoring this pointer, which means nothing will be defined.\n";
+          next;
+        }
+      }
+    }
+  }
+}
+
+
+sub write_to_env {
+
+  my($key, $arch, $econ, $var);
+
+  foreach $key (keys %db) {
+    foreach $arch (keys %{ $db{$key} }) {
+      foreach $econ (keys %{ $db{$key}{$arch} }) {
+        foreach $var (keys %{ $db{$key}{$arch}{$econ} }) {
+          # don't use ones that equal '!'
+          next if ($db{$key}{$arch}{$econ}{$var} eq "!");
+          $env{"ENV:$key:$arch:$econ:$var"} = $db{$key}{$arch}{$econ}{$var};
+        }
+      }
+    }
+  }
+}
+
+
+# ===========================================================================
+# Check for errors
+#
+# Do a few sanity checks for errors. 
+# ===========================================================================
+
+sub check_for_errors {
+  my($error) = 0;
+  my($key);
+
+  foreach $key (keys %env) {
+    if($key =~ /^MACRO:(.*)$/) {
+      $error = &check_macro($1, $env{$key}) || $error;
+
+    }
+  }
+  $error;
+}
+
+sub check_macro {
+  # return 1 if we find an error, 0 otherwise
+
+  my($macro, $defn) = @_;
+  my($e, $error);
+
+  if ($defn =~ /^\s*$/) {
+    print "Warning:  Macro $macro has no definition.\n";
+    print "  Check the definition of $macro in the database.\n";
+    return 1;
+  }
+
+  $error = 0;
+  foreach $e (split(/\s+/, $defn)) {
+    if($e =~ /^(@.+)/) {
+      if (!defined($env{"MACRO:$e"})) {
+	print "Warning: Macro $macro, definition $defn:\n";
+	print "  $e looks like a macro but wasn't found in the database.\n";
+	$error = 1;
+      }
+    }
+    elsif($e =~ /^(\+.+)/) {
+      if (!defined($env{"DESC:$e"})) {
+	print "Warning: Macro $macro, definition $defn:\n";
+	print "  $e looks like a keyword but wasn't found in the database.\n";
+	$error = 1;
+      }
+    }
+    else {
+      print "Warning: Macro $macro, definition $defn:\n";
+      print "  $e is bad syntax.  It's not a keyword or a macro.\n";
+      print "  Check the definition of $macro in the database.\n";
+      $error = 1;
+    }
+  }
+  $error;
+}
+
+# ===========================================================================
+# Writing the database
+#
+# The vast majority of the work was done in the read database section.
+# Here, we just take the values in %env and write them to a file.
+# ===========================================================================
+
+sub write_database {
+  my($key);
+
+  print "Writing $database.\n" if ($debug);
+
+  link("$database","$database.old");
+  umask(0222);
+
+  open OUT, ">$database.new" || die "$program: Unable to open $database.new";
+
+  foreach $key (sort keys %env) {
+    if(!(print OUT "$key->$env{$key}\n")) {
+      die "$program: can't print to $database.new!\n";
+    }
+  }
+
+  close OUT;
+
+  # safety precautions in case the program bombs out in the middle
+  unlink ("$database");
+  link("$database.new", "$database");
+  unlink("$database.new");
+  unlink("$database.old");
+}

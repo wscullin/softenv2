@@ -1,0 +1,83 @@
+#
+#   softenv-local.db
+#
+#   $Id: softenv-local.db.example-complex,v 1.2 2003/08/28 03:41:44 finley Exp $
+#
+#   A secondary database.  Some entries here for ease of administration.  One 
+#   way to use a secondary database is by having a master database that doesn't
+#   change across an environment, and then storing local settings, that may be 
+#   different from system to system, in a secondary database.
+#
+
+
+################################################################################
+#
+# user paths
+#
+(+tg_apps_prefix) {
+    {desc: Local Application Directory Prefix (used in softenv.db)} 
+    {flags: power}
+    
+    [] {
+        TG_APPS_PREFIX      /usr/local/$PLATFORM
+    }
+}
+
+
+################################################################################
+#
+# tg_environment
+#
+(+tg_environment) {
+    {desc: "TeraGrid specific environment settings."}
+    
+    [] {
+      pointer +tg_environment-1.0
+    }
+}
+
+(+tg_environment-1.0) {
+    {desc: "TeraGrid specific environment settings."}
+    
+    [] {
+    
+        PATH		        $TG_APPS_PREFIX/bin
+        MANPATH		        $TG_APPS_PREFIX/man
+        
+        TG_NODE_SCRATCH     /scratch/local
+        TG_GLOBAL_SCRATCH   To_Be_Determined
+        TG_CLUSTER_SCRATCH  /scratch/pvfs
+        
+        TG_CLUSTER_HOME     /tg-home/$USER
+        TG_GLOBAL_HOME      To_Be_Determined
+        
+    }
+}
+
+
+################################################################################
+#
+# tg_local
+#
+
+(@tg-local) {
+    @tg-local-v1.0
+}
+
+(@tg-local-v1.0) {
+    {desc:  "TeraGrid Related Local Software v1.0"}
+    {flags: power}
+
+    +goo-2.0
+    
+}
+
+(+goo-2.0) {
+    {desc: "TeraGrid specific environment settings."}
+    
+    [] {
+        PATH		        /usr/local/goo-2.0/bin
+    }
+}
+
+

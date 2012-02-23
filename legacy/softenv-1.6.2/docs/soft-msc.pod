@@ -1,0 +1,47 @@
+=head1 NAME
+
+soft-msc - creates the cache files for the SoftEnv system
+
+=head1 DESCRIPTION
+
+The program soft-msc creates the cache files on login time for each user
+based on their SOFTENVRC or similar file.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft-msc. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+soft-msc [C<-d> C<-s> C<-t>] [file]
+
+=over
+
+=item -d
+
+This option turns on debugging.
+
+=item -s
+
+This option runs the program silently, which is to be used on login.
+
+=item -t
+
+This uses the test database instead of the real soft.db
+
+=item -u -h --help
+
+Helpful messages
+
+=item -v --version
+
+Version
+
+=item file
+
+If a file is specified, then that file will be used instead of the user's
+SOFTENVRC file.
+
+=back

@@ -1,0 +1,52 @@
+=head1 NAME
+
+soft-menu-change - does the changing part of the softmenu function
+
+=head1 DESCRIPTION
+
+soft-menu-change takes the information from soft-menu-select and
+deletes and adds the correct keys from the environment.  Most of the
+errors are taken care of in soft-menu-select.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft-menu-change. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+soft-menu-change [C<-t> C<-d>] csh|sh group selection
+
+=over
+
+=item -t
+
+Use the test database
+
+=item -d
+
+This option turns on debugging
+
+=item csh|sh
+
+This specifies the shell format to output, and must be the first argument
+on the command line (excepting the options)
+
+=item group
+
+The group that you want to pick a keyword from
+
+=item selection
+
+the selection from the menu
+
+=item -u -h --help
+
+Helpful messages
+
+=item -v --version
+
+Version
+
+=back

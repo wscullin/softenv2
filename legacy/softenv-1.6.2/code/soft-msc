@@ -1,0 +1,2310 @@
+#!!PERL_PATH!
+#
+# soft-msc  
+# The SoftEnv "make software cache" program.
+#
+# This is part of Msys, the MCS Systems Administration Toolkit
+# For more information, see http://www.mcs.anl.gov/systems/software/ .
+#
+# Copyright (c) University of Chicago 1999.
+# See the COPYRIGHT file in the distribution for details on the copyright.
+#
+# ===========================================================================
+#
+# Description:
+#  Creates the SOFTENVRC cache for csh and sh type shells
+#  based on the system SoftEnv database, and the user's SOFTENVRC file.
+#  A rewrite of make-software-cache, using compiler techniques.
+#  Probably a bit memory bloated and slow, but very easy to modify.
+#
+# ===========================================================================
+#
+# Authors and ID String:
+# 
+#   Remy Evard, evard@mcs.anl.gov
+#   Alan Bailey, bailey@mcs.anl.gov
+# 
+# $Id: soft-msc,v 1.32 2007/02/05 20:46:49 navarro Exp $
+#
+# ===========================================================================
+#
+#  soft-msc [-d -s -t] [file]
+#   -d               : turn on debugging
+#   -s               : run silently (to be used by login shell invocation)
+#   -t               : use the test database
+#   -u -h --help     : helpful stuff   
+#   -v --version     : version   
+#   file             : what file to use if not SOFTENVRC
+#
+# ===========================================================================
+#
+# Exit codes: (>=10 is a warning)
+#   0  Successful completion. The user's SOFTENVRC.cache was created.
+#   1  Unspecific or unknown error
+#   2  No SOFTENVRC.cache was created because of a strange environment.
+#   3  No cache was created because of creation or opening errors
+#   4  No cache was created because of errors writing to the file
+#   5  Cachefiles were locked.
+# Warnings:
+#   10 The SOFTENVRC.cache was created, but the user's SOFTENVRC file could not
+#      be found or opened.
+#   11 A SOFTENVRC.cache was created, but the user's SOFTENVRC had errors.
+#   12 an old lock file was found and deleted
+#
+# ===========================================================================
+
+
+use Getopt::Std;
+use strict;
+use vars qw(@pass0 @pass1 @pass2 @pass2_5 @pass3 @pass4 @pass5);
+use vars qw($debug $softfile $exitval $program $silent $HOME);
+use vars qw($default_softfile $cacheprefix @errors $database $test_database);
+use vars qw(%db %remove);
+use vars qw($error_parms %error_val);
+use vars qw($package_name $version @softdef %supported);
+use vars qw($arch_id_program);
+use vars qw(%econs $softname);
+
+# Read the command line, load in the global variables.  If major errors
+# are found, will exit.
+&set_globals();
+
+@pass0 = &pass0($softfile);                 # Read the file
+&dump0("0", @pass0) if $debug;
+
+@pass1 = &pass1(@pass0);                    # Parse it
+&dump1("1", @pass1) if $debug;
+
+@pass2 = &pass2(@pass1);                    # Expand macros, remove errors
+&dump1("2", @pass2) if $debug;
+
+@pass3 = &pass3(@pass2);
+&dump3("3", @pass3) if $debug;
+
+@pass4 = &pass4(@pass3);
+&dump3("4", @pass4) if $debug;
+
+@pass5 = &pass5(@pass4);                    # pass 5 no longer takes
+&dump5("5", @pass5) if $debug;              #the info from pass1 with it
+
+if((&output(\@pass0, @pass5) == 0) or $exitval) {
+  &handle_errors();
+}
+  
+exit $exitval;
+  
+
+# ===========================================================================
+# Subroutines
+# ===========================================================================
+
+sub set_globals {
+  # Global variables:
+  #
+  # Not set here:
+  #  The pass variables:  @pass0, @pass1, etc.
+  #
+  # Set here:
+  #
+  #  $program:           This program's name
+  #  $silent:            Whether or not we run in silent mode.
+  #  $debug:             Non-zero if debugging is on
+  #  $dbpath:            The directory in which to find the sw.db files
+  #  $system_db:         The name of the system database
+  #  $beta_db:           The name of the beta database
+  #  $auto_db:           The name of the automatic database
+  #  $database:          The compiled database
+  #  $default_softfile:  The user's default SOFTENVRC file
+  #  @softdef:           The default contents of missing SOFTENVRC files
+  #  %supported:         A hash of supported architectures.  Keys are
+  #                        architecture names.  Values are 1 if supported.
+  #  %db:                The values read in from the system database.
+  #  %accumulate:        A hash of environment variables that should be
+  #                        appended to rather than be reset.
+  #  %uniquify:          A hash of environment variables that should be
+  #                        uniquified when appended to.
+  #  %remove:            A hash of db keys that have removal values.
+  #  $exitval:           The value to exit with.
+  #  $error_parms:       Useful strings to be used when reporting errors.
+  #  %parse_errors:      A record of parse errors when reading input file.
+  #
+  # 
+  use vars qw($opt_h $opt_u $opt_d $opt_s $opt_t $opt_v);
+
+  # Look at user's environment
+  #   From old code... don't use this, but may need to.
+  # ($USER, $HOME, $SHELL, $SHOSTNAME, $LHOSTNAME, $ARCH) = ($ENV{'USER'}, 
+  #   $ENV{'HOME'}, $ENV{'SHELL'}, $ENV{'HOSTNAME'}, $ENV{'HOST'}, 
+  #   $ENV{'ARCH'});
+  $HOME = $ENV{'HOME'};
+
+  # Never run this as root or with a strange environment...
+  if ($> == 0 || $< != $> || $HOME eq "/") {
+    $exitval = 2;
+    &handle_errors();
+    exit($exitval);
+  }
+
+  # read the site defaults
+  push(@INC, 'SOFTENV_ETC_DIR');
+  require 'softenv.config.pl';
+
+  ($program = $0) =~ s:.*/::;
+  $softname = "$package_name $version";
+
+  if ($ARGV[0] eq "--version") {
+    &version; 
+    exit(0);
+  }
+  if ($ARGV[0] eq "--help") {
+    &usage;
+    exit(0);
+  }
+
+  $debug = $silent = 0;
+  getopt('');
+  $debug = 1 if($opt_d);
+  $silent = 1 if($opt_s);
+  $database = $test_database if($opt_t);
+
+  if (($opt_h) or ($opt_u)) {
+    &usage();
+    exit(0);
+  }
+  if ($opt_v) {
+    &version();
+    exit(0);  
+  }
+
+  if(defined $ARGV[0]) {
+    if ($ARGV[0] =~ /^$HOME\//) {
+      $softfile = $ARGV[0];
+    } else {
+      $softfile = "$HOME\/$ARGV[0]";
+    }
+  } else {
+    $softfile = $default_softfile;        # User's SOFTENVRC file
+  }
+
+  $cacheprefix = $softfile . ".cache";
+
+  if($opt_h || $opt_u || $#ARGV eq "-help" || $#ARGV eq "--help") {
+    &usage();
+    exit(0);
+  }
+
+  %db = &read_database($database);
+
+  # Not used - look into.
+  # %parse_errors = ();
+
+  # List of lines and instructions with errors, built in pass2.
+  @errors = ();
+
+  $exitval = 0;
+  $error_parms = "";
+  # Exit codes: (>=10 is a warning)
+  #   0  Successful completion. The user's SOFTENVRC.cache was created.
+  #   1  Unspecific or unknown error
+  #   2  No SOFTENVRC.cache was created because of a strange environment.
+  #   3  No cache was created because of creation or opening errors
+  #   4  No cache was created because of errors writing to the file
+  #   5  Cachefiles were locked.
+  # Warnings:
+  #   10 The SOFTENVRC.cache was created, but the user's file could not
+  #      be found or opened.
+  #   11 A SOFTENVRC.cache was created, but the user's SOFTENVRC had errors.
+  #   12 A SOFTENVRC.cache.*.lock file was found, but it was old and
+  #      overwritten
+  #
+  $error_val{"UNKNOWN_ERROR"}    = 1;
+  $error_val{"WEIRD_ENV"}        = 2;
+  $error_val{"CREATION_ERRORS"}  = 3;
+  $error_val{"WRITE_ERRORS"}     = 4;
+  $error_val{"CACHE_LOCKED"}     = 5;
+  $error_val{"SOFT_NOT_FOUND_W"} = 10;
+  $error_val{"PARSE_PROBLEMS_W"} = 11;
+  $error_val{"OLD_LOCK_FILE"}    = 12;
+}
+
+
+sub handle_errors {
+  # These are routine-ified in case we decide there's some better way
+  # to report error messages than printing them to stdout.
+  #
+  return if($silent);
+
+  if($exitval == $error_val{"UNKNOWN_ERROR"}) {
+    print "$softname system error: unspecific error\n";
+  }
+  if($exitval == $error_val{"WEIRD_ENV"}) {
+    print "$softname system error: weird environment.  are you root?\n";
+  }
+  if($exitval == $error_val{"CREATION_ERRORS"}) {
+    print "$softname system error: could not create the file: $error_parms\n";
+  }
+  if($exitval == $error_val{"WRITE_ERRORS"}) {
+    print "$softname system error: errors occured in writing $error_parms\n";
+  }
+  if($exitval == $error_val{"CACHE_LOCKED"}) {
+    print "$softname system error: $error_parms was locked\n";
+    print "Try deleting any files ending in .lock and running resoft.\n";
+  }
+  if($exitval == $error_val{"SOFT_NOT_FOUND_W"}) {
+    print "$softname system warning: no $softfile file was found\n";
+  }
+  if($exitval == $error_val{"PARSE_PROBLEMS_W"}) {
+    print "$softname system warning: some words were not recognized\n";
+    print "Examine $error_parms.\* for error details.\n";
+  }
+  if($exitval == $error_val{"OLD_LOCK_FILE"}) {
+    print "$softname system warning: $error_parms was locked.\n";
+    print "However, it appeared to be old and execution was completed\n";
+  }
+}  
+
+sub usage {
+print <<"EOF";
+
+$program is part of $package_name version $version
+
+  Usage:
+    $program [-t -d -s] [file]
+     -d             : turn on debugging
+     -s             : run silently (to be used by login shell invocation)
+     -t             : use the test database
+     -u -h --help   : helpful stuff
+     -v --version   : version
+     file           : what file to use if not SOFTENVRC
+
+  Purpose:
+     $program is part of the $package_name system.  It reads from the
+     user's file and the system database to create a cache file that
+     is sourced on login.
+
+EOF
+}
+
+sub version {
+print <<"EOF";
+
+$program is part of $package_name version $version
+
+EOF
+}
+
+
+# ===========================================================================
+# Pass 0 - reading the file into an array
+# ===========================================================================
+# Read SOFTENVRC and slurp it into an array.  We do this rather than reading
+# it and parsing at the same time so that it's possible to specify the
+# contents of the default SOFTENVRC in a variable in the global config file.
+#
+
+sub pass0 {
+  # Find the .software file and slurp it into an array.
+  # If we can't find it, then return the fake one.
+  #
+  my($file) = @_;
+  my(@lines) = ();
+
+  print "Pass 0: reading $file\n"  if($debug);
+
+  if(! -e $file ) {
+    $exitval = $error_val{"SOFT_NOT_FOUND_W"};
+    print "Can't open $file\n" if($debug);
+    @lines = @softdef;
+
+  } elsif(!open(SOFTFILE, $file)) {
+    $exitval = $error_val{"SOFT_NOT_FOUND_W"};
+    print "Can't open $file\n" if($debug);
+    @lines = @softdef;
+
+  } else {
+    while(<SOFTFILE>) {
+      chomp;
+      push(@lines, $_);
+    }
+    close(SOFTFILE);
+  }
+
+  @lines;
+}
+
+sub dump0 {
+  my($p, @d) = @_;
+  my($v);
+  
+  print "== Pass $p array values ===============================\n";
+  foreach $v (@d) {
+    print "$v\n";
+  }
+  print "=====================================================\n";
+}
+
+
+
+# ===========================================================================
+# Pass 1 - turning the contents of SOFTENVRC into an array of instructions.
+# ===========================================================================
+#
+# A pass 1 and pass2 instruction has these fields:
+#   cond     :  1 if this line had a conditional, 0 otherwise
+#   test_lhs :  the test condition left hand side
+#   test_rhs :  the test condition right hand side
+#   linenum  :  the line number in SOFTENVRC
+#   entry    :  the original line in the file
+#   code     :  the kind of statement:
+#                 "error"     - an error
+#                 "keyword"   - a keyword:  +xemacs
+#                 "remove"    - a keyword:  -xemacs
+#                 "macro"     - a macro:    @default
+#                 "append"    - an env addition:  PATH+=/bin
+#                 "set"       - an env set:       FOO=bar
+#                 "add"       - used in pass2, the result of a keyword
+#   op1      : the first op, containing:
+#                 error:   error information
+#                 keyword: the keyword, _without_ the + sign on it
+#                 macro:   the macro, with the @ sign on it
+#                 append:  the variable to be appended to
+#                 set:     the variable to be set
+#                 add:     the keyword to add, with the + sign
+#                 remove:  the keyword to add, with the + sign
+#   op2      : the second op, containing:
+#                 append:  the value to append
+#                 set:     the value to set
+#
+# This returns the instruction set in an array to be given to pass2
+#
+
+
+sub pass1 {
+  my(@lines) = @_;
+  my(@entry, $line, $linenum, $inst, @insts) = ();
+  $linenum = -1;
+
+  foreach $line (@lines) {
+    $linenum++;
+    if($inst = &pass1_parse_line($line, $linenum)) {
+      push(@insts, $inst);   # after we found the instruction, push into
+                             # the array
+    }
+  }
+  @insts;
+}
+
+
+sub pass1_parse_line {
+  #
+  # Return a reference to an instruction, or 0 if no instruction.
+  #
+  my($line, $linenum) = @_;
+  my(%i) = ();
+
+  $i{"cond"} = 0;
+  $i{"entry"} = $line;
+  $i{"linenum"} = $linenum;
+
+  return 0 if($line =~ /^\s*$/);              # blank lines
+  return 0 if($line =~ /^\s*\#/);             # lines beginning with a #
+
+  $line =~ s/^\s*//;                          # strip leading whitespace
+  $line =~ s/\s*$//;                          # strip trailing whitespace
+     
+  if($line =~ /^if/) {
+    ($i{"cond"}, $i{"test_lhs"}, $i{"test_rhs"}, 
+     $i{"code"}, $i{"op1"}, $i{"op2"}) =  
+       &pass1_parse_conditional($line);
+    return(\%i);    
+  }
+  if($line =~ /^\+/) {            #KEYWORD
+    ($i{"code"}, $i{"op1"}) = &pass1_parse_keyword($line);
+    return(\%i);
+  }
+  if($line =~ /^\@remove/) {
+    ($i{"code"}, $i{"op1"}) = &pass1_parse_macroremove($line);
+    return(\%i);
+  }
+  if($line =~ /^\@/) {            #MACRO
+    ($i{"code"}, $i{"op1"}) = &pass1_parse_macro($line);
+    return(\%i);
+  }
+  if($line =~ /\+\=/) {           #APPEND
+    ($i{"code"}, $i{"op1"}, $i{"op2"}) = &pass1_parse_append($line);
+    return(\%i);
+  }
+  if($line =~ /\=/) {             #SET
+    ($i{"code"}, $i{"op1"}, $i{"op2"}) = &pass1_parse_set($line);
+    return(\%i);
+  }
+    
+  # At this point, we have a line that we don't understand.
+  # Note an error and a line number, and set the exit value, then
+  # continue parsing the file.
+  #
+  $i{"code"} = "error";
+  $i{"op1"} = "unable to parse this line";
+  $exitval = $error_val{"PARSE_PROBLEMS_W"};
+  $error_parms = $cacheprefix;
+  return \%i;
+}
+
+sub pass1_parse_keyword {
+  my($line) = @_;
+  my($code, $keyword);
+
+  if($line =~ /^\+(\S+)$/) {
+    $code = "keyword";
+    $keyword = "+" . $1;
+  } else {
+    $code = "error";
+    $keyword = "unable to parse this keyword";
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+  if (! exists $db{"DESC"}{$keyword}) {
+    $code = "error";
+    $keyword = "unknown keyword";
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+  ($code, $keyword);
+}
+
+sub pass1_parse_macroremove {
+  my($line) = @_;
+  my($code, $keyword);
+
+  if($line =~ s/^\@remove\s+//) {
+    $code = "remove";
+    $keyword = "$line";   # i'm storing all of the removes in one string
+
+  } else {
+    $code = "error";
+    $keyword = "unable to parse this macro removal";
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+  ($code, $keyword);
+}
+
+sub pass1_parse_macro {
+  my($line) = @_;
+  my($code, $keyword);
+
+  if($line =~ /^\@(\S+)$/) {
+    $code = "macro";
+    $keyword = "@" . $1;
+  } else {
+    $code = "error";
+    $keyword = "unable to parse this macro";
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+  if (! exists $db{"DESC"}{$keyword}) {
+    $code = "error";
+    $keyword = "unknown macro";
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+  ($code, $keyword);
+}
+
+sub pass1_parse_append {
+  my($line) = @_;
+  my($code, $op1, $op2);
+
+  if($line =~ /^(\S+)\s*\+\=\s*(\S+)$/) {
+    $code = "append";
+    $op1 = $1;
+    $op2 = &bracify($2);
+  } else {
+    $code = "error";
+    $op1 = "unable to parse this append clause";
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+  ($code, $op1, $op2);
+}
+
+sub pass1_parse_set {
+  my($line) = @_;
+  my($code, $op1, $op2);
+
+  if($line =~ /^(\S+)\s*\=\s*(.+)$/) {
+    $code = "set";
+    $op1 = $1;
+    $op2 = &bracify($2);
+  } else {
+    $code = "error";
+    $op1 = "unable to parse this assignment clause";
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+  ($code, $op1, $op2);
+}
+
+sub pass1_parse_conditional {
+  my($line) = @_;
+  my($subinst);
+  my($code, $cond, $conditional, $statement, $test_lhs, $test_rhs, $op1, $op);
+
+  if($line =~ /^if(.+)then(.+)$/) {
+    $cond = 1;
+    $conditional = $1;
+    $statement = $2;
+    
+    if ($conditional =~ /^\s*(\S+)\s*\!\=\s*(\S+)\s*$/) {
+      $cond = 2;
+      $test_lhs = &bracify($1);
+      $test_rhs = &bracify($2);
+    } elsif ($conditional =~ /^\s*(\S+)\s*\=\s*(\S+)\s*$/) {
+      $cond = 1;
+      $test_lhs = &bracify($1);
+      $test_rhs = &bracify($2);
+    } else {
+      $code = "error";
+      $op1 = "unable to parse the conditional in the if";
+      $exitval = $error_val{"PARSE_PROBLEMS_W"};
+      $error_parms = $cacheprefix;
+      return ($cond, $test_lhs, $test_rhs, $code, $op1, $op);
+    }
+    
+    if($statement =~ /^\s*(.+)\s*$/) {
+      $statement = $1;
+      $subinst = &pass1_parse_line($statement, 0);
+      return($cond, $test_lhs, $test_rhs, $subinst->{"code"},
+             $subinst->{"op1"}, $subinst->{"op2"});
+    } else {
+      $code = "error";
+      $op1 = "unable to parse the statement in the if";
+      $exitval = $error_val{"PARSE_PROBLEMS_W"};
+      $error_parms = $cacheprefix;
+      return ($cond, $test_lhs, $test_rhs, $code, $op1, $op);
+    }
+
+  } else {
+    $code = "error";
+    $op1 = "unable to parse the if clause";
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+
+  return ($cond, $test_lhs, $test_rhs, $code, $op1, $op);
+}
+
+sub dump1 {
+  my($p, @d) = @_;
+  my($v);
+  
+  print "= Pass $p =====================================================\n";
+  foreach $v (@d) {
+    print $v->{"linenum"}, " ", $v->{"cond"}, " ", $v->{"test_lhs"}, " ", 
+    $v->{"test_rhs"}, " ", $v->{"code"}, " ", $v->{"op1"}, " ", 
+    $v->{"op2"}, "\n";
+  }
+}
+
+
+# ===========================================================================
+# Pass 2 - Remove error lines, and expand macros and keywords from pass1.
+# ===========================================================================
+# Take the error lines, and put them in the "@errors" array, for reference
+# later.  Get them out of the instruction stream.
+#
+# Use pass1 format instructions.
+#
+# Expand all macros and keywords into "adds".
+
+sub pass2 {
+  # Walk through pass1.
+  #  Make an array of errors and lines to report at the top.
+  #  Expand all macros and keywords into single adds, retaining
+  #    conditional tests.
+  #  Leave 'append', 'set', and 'remove' as they are.
+  #
+  my(@p1) = @_;
+  my(@p2, $i, $i2, $new) = ();
+  my(@keywords, $k);
+  my(@removals, $removekey, %removals) = ();
+  my(%arches_to_do);
+
+  foreach $i (@p1) {
+    if($i->{"code"} eq "error") {
+      push(@errors, $i);
+      next;
+    }
+
+    if($i->{"code"} eq "keyword") {
+      next if (exists ($removals{ $i->{"op1"} }));
+      $i->{"code"} = "add";
+      push(@p2, $i);
+      next;
+    }
+
+    if($i->{"code"} eq "remove") {
+      push @removals, (split /\s+/, ($i->{"op1"}));
+      @removals = &resolve_macro_simple(@removals);
+      foreach $removekey (@removals) {
+        $removals{$removekey} = 1;
+      }
+      next;
+    }
+
+    # Expand macros into lists of keywords, and then add each one
+    # in as a new instruction code.
+    #
+    if($i->{"code"} eq "macro") {
+
+      # If we are already inside an ARCH = statement, we can compress this, by
+      # just including the ARCHes that were specified in our work.
+      if ($i->{"test_lhs"} eq 'ARCH') {
+        if ($i->{"cond"} == 2) {
+          # not equal
+          %arches_to_do = %supported;
+          delete $arches_to_do{$i->{"test_rhs"}};
+        } else {
+          # equal
+          %arches_to_do = ($i->{"test_rhs"} => 1);
+        }
+      } else {
+        %arches_to_do = %supported;
+      }
+
+      # This command now populates the @p2 array
+      # We need to pass it ptrs to a bunch of stuff
+      &resolve_macro_pass_2(\@p2, $i, \%removals, $i->{"op1"}, 
+          %arches_to_do);
+
+#      foreach $k (@keywords) {
+#        next if (exists ($removals{$k}));
+#        $new = &new_inst($i->{"cond"}, $i->{"test_lhs"}, $i->{"test_rhs"},
+#			      $i->{"linenum"}, $i->{"entry"}, "add", $k, "", "");
+#        push(@p2, $new);
+#      }
+      next;
+    }
+
+    # Otherwise, we use the same instruction format.
+    push(@p2, $i);
+  }
+
+  @p2;
+}
+
+
+sub resolve_macro_pass_2 {
+
+  my($p2_ptr, $code_ptr, $removals_ptr, $macro, %arches_to_do) = @_;
+  my(@list_of_keywords, %new_arches_to_do, $exist_arch, $arch);
+  my($keyword, $new);
+
+  # Prune the list of arches to take care of with this macro
+
+  foreach $exist_arch (split(/ /, $db{"MACRO_ARCHES"}{$macro})) {
+    if ($arches_to_do{$exist_arch}) {
+      $new_arches_to_do{$exist_arch} = 1;
+    }
+  }
+  %arches_to_do = %new_arches_to_do;
+
+  if ((scalar keys %arches_to_do) == 0) {
+    # This macro should not be done on any more architectures
+    # One way this could happen is:
+    # if ARCH = linux-2 then @only-for-solaris
+    return;
+  }
+
+  # Now that we know we'll be adding the keywords of this macro, retrieve them.
+  @list_of_keywords = split(/ /, $db{"MACRO"}{$macro});
+
+  foreach $keyword (@list_of_keywords) {
+    next if (exists (${ $removals_ptr }{$keyword}));
+    if ($keyword =~ /^\@/) {
+      # Search deeper until we get the first actual keyword.
+      # We need to pass on the array pointer, the code pointer describing the
+      # main line of code, and the list of removals.  As well as the actual 
+      # keyword we're at and the list of arches that should be used.
+      resolve_macro_pass_2($p2_ptr, $code_ptr, $removals_ptr, $keyword, 
+          %arches_to_do);
+    } else {
+      # normal keyword.  For each arch that we're adding this macro for, add 
+      # an 'add' command to the instruction stream.
+      if ((scalar(keys(%arches_to_do))) == (scalar(keys(%supported)))) {
+        # We haven't limited the number of arches.  All this work was
+        # pointless and we can do a single add statement for all arches.
+        $new = &new_inst($code_ptr->{"cond"}, $code_ptr->{"test_lhs"}, 
+            $code_ptr->{"test_rhs"}, $code_ptr->{"linenum"}, 
+            $code_ptr->{"entry"}, "add", $keyword, "");
+        push(@{ $p2_ptr }, $new);
+      } else {
+        # Loop over all the arches we're doing for this keyword
+        foreach $arch (keys %arches_to_do) {
+          $new = &new_inst($code_ptr->{"cond"}, $code_ptr->{"test_lhs"}, 
+              $code_ptr->{"test_rhs"}, $code_ptr->{"linenum"}, 
+              $code_ptr->{"entry"}, "add", $keyword, "", $arch);
+          push(@{ $p2_ptr }, $new);
+        }
+      }
+    }
+  }
+}
+
+
+
+# ===========================================================================
+# Pass 3 - Building lower level instructions, to prepare for printing.
+# ===========================================================================
+# Go through pass2, and build a new set of instructions with
+# the information that is necessary for printing.  
+#
+# Move conditional information from being a flag on an instruction into
+# being an actual instruction.
+#
+# Be fairly smart about the conditionals, only using the necessary
+# number of if/endifs for adjacent instructions that have the same 
+# conditional tests.
+#
+# Follow keyword adds and removals with a print (dumpenv) instruction.
+#
+# Pass 3 and 4 instructions look like:
+#   $i{"code"}     -> "add", "append", "set", "if", "endif", "delvar",
+#                     "dumpenv", "error", "remove", "initvar", "uninitvar"
+#   $i{"op1"}      -> 
+#       add:     the keyword, with the + sign on it
+#       append:  the variable to be appended to
+#       set:     the variable to be set
+#       if:      the lhs
+#       endif:   the lhs of the if
+#   $i{"op2"}      -> 
+#       append:  the value to append
+#       set:     the value to set
+#       if:      the rhs
+#       endif:   the rhs of the if
+#   $i{"arch"}     -> if this inside an if (ARCH =) clause, that ARCH
+#   $i{"linenum"}  -> the linenumber
+#
+
+sub pass3 {
+  my(@p2) = @_;
+  my($i, @p3);
+  my($in_if, $if_lhs, $if_rhs, $linenum, $arch) = ();
+  my(@arches, $a);
+  my($keyword, $counter);
+
+  @p3 = &pass3_add_init(@p3);  # Add initialize instructions to the stream
+
+  # Loop through all pass2 instructions, extracting the conditional
+  # information first, then translating in the code.
+  #
+  foreach $i (@p2) {
+    $linenum = $i->{"linenum"};
+    ($in_if, $if_lhs, $if_rhs, @p3) = 
+        &pass3_ifscan($in_if, $if_lhs, $if_rhs, $i, $linenum, @p3);
+
+    # This may be enveloped inside an ARCH.  This can either come from an 
+    # 'if ARCH = ' statement in the SOFTENVRC file, or from the arches that can 
+    # limit a macro.
+    if(($in_if eq "1") && ($if_lhs eq "ARCH")) {
+      $arch = $if_rhs;
+    } elsif (defined($i->{"arch"})) {
+      $arch = $i->{"arch"};
+    } else {
+      $arch = "";
+    }
+
+    $keyword = $i->{"op1"};
+
+    if($i->{"code"} eq "add") {
+      # For the dumpenv commands here, notice that we don't specify the
+      # arch, like we do for nontrivialadd.  The dumpenv should operate on
+      # ALL arches
+      if (exists $econs{$keyword}) {
+        push(@p3, &new_inst3("dumpenv", $i->{"test_lhs"}, $i->{"test_rhs"},
+           "", $i->{"linenum"}));
+        push(@p3, &new_inst3("nontrivialadd", $i->{"op1"}, $i->{"op2"},
+           $arch, $linenum));
+      } elsif ($db{"FLAGS"}{$keyword} =~ /ordered/) {
+        # This key needs to have its variables initialized in order.  Don't 
+        # munge it with everything else.
+        push(@p3, &new_inst3("dumpenv", $i->{"test_lhs"}, $i->{"test_rhs"},
+           "", $i->{"linenum"}));
+        push(@p3, &new_inst3("nontrivialadd", $i->{"op1"}, $i->{"op2"},
+           $arch, $linenum));
+      } else {
+        push(@p3, &new_inst3("add", $i->{"op1"}, $i->{"op2"}, 
+			   $arch, $linenum));
+      }
+      next;
+    }
+    if($i->{"code"} eq "append") {
+      push(@p3, &new_inst3("append", $i->{"op1"}, $i->{"op2"}, 
+			   $arch, $linenum));
+      next;
+    }
+    if($i->{"code"} eq "set") {
+      push(@p3, &new_inst3("set", $i->{"op1"}, $i->{"op2"}, 
+			   $arch, $linenum));
+      next;
+    }
+    push(@p3, &new_inst3("error", "strange pass2 instruction: " 
+			 . $i->{"code"}, "", "", $linenum));
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+
+  if($in_if) {
+    push(@p3, &new_inst3("endif", $if_lhs, $if_rhs, "", $linenum-1));
+  }
+  
+  @p3 = &pass3_add_dumpenv(@p3);
+
+  @p3 = &pass3_add_remove_init(@p3);
+
+  @p3;
+}
+
+sub pass3_add_init {
+  # deal with the initialize stuff
+  # specifically, put an instruction, initvar, in for each var
+  # that has to be set
+  # remember we have to strip off the number from the beginning
+
+  my(@p3) = @_;
+  my($i, $arch);
+
+  # Delete some of the variables we will accumulate.
+  foreach $i (sort keys %{ $db{"ACCUMULATE"} }) {
+    push(@p3, &new_inst3("delvar", $i, "", "", 0));
+  }
+
+  # default
+  foreach $i (sort keys %{ $db{"INITIALIZE"}{"default"} }) {
+    ($_ = $i) =~ s/^(\d+)://;
+    if (defined($db{"ACCUMULATE"}{$_})) {
+      # This is an accumulate var.  Add a hook along with it so we can remove 
+      # this at the end.
+      push(@p3, &new_inst3("initvar", $_, 
+          "/INIT:".$db{"INITIALIZE"}{'default'}{$i}, 
+          "", 0));
+    } else {
+      push(@p3, &new_inst3("initvar", $_, $db{"INITIALIZE"}{'default'}{$i}, 
+          "", 0));
+    }
+  }
+
+  # Set ARCH to the result of $arch_id_program
+  push(@p3, &new_inst3("initvar", "ARCH", "`$arch_id_program`", "", 0));
+
+  # each arch
+  push(@p3, &new_inst3("switch", '${ARCH}', "", "", 0));
+  foreach $arch (sort keys %{ $db{"INITIALIZE"} }) {
+    next if ($arch eq "default");
+    push(@p3, &new_inst3("case", $arch, "", "", 0));
+    foreach $i (sort keys %{ $db{"INITIALIZE"}{$arch} }) {
+      ($_ = $i) =~ s/^(\d+)://;
+      if (defined($db{"ACCUMULATE"}{$_})) {
+        push(@p3, &new_inst3("initvar", $_, 
+            "/INIT:".$db{"INITIALIZE"}{$arch}{$i}, 
+            "", 0));
+      } else {
+        push(@p3, &new_inst3("initvar", $_, $db{"INITIALIZE"}{$arch}{$i}, 
+            "", 0));
+      }
+    }
+    push(@p3, &new_inst3("endcase", $arch, "", "", 0));
+  }
+  push(@p3, &new_inst3("endswitch", '${ARCH}', "", "", 0));
+
+  @p3;
+}
+
+sub pass3_add_remove_init {
+  # deal with the initialize stuff
+  # specifically, put an instruction, initvar, in for each var
+  # that has to be set
+  # remember we have to strip off the number from the beginning
+
+  my(@p3) = @_;
+  my($i, $arch);
+
+  # default
+  foreach $i (sort keys %{ $db{"INITIALIZE"}{"default"} }) {
+    ($_ = $i) =~ s/^(\d+)://;
+    if (defined($db{"ACCUMULATE"}{$_})) {
+      # This is an accumulate var.  Add a hook along with it so we can remove 
+      # this at the end.
+      push(@p3, &new_inst3("uninitvar", $_, 
+          "/INIT:".$db{"INITIALIZE"}{'default'}{$i}, 
+          "", 0));
+    }
+  }
+  # each arch
+  push(@p3, &new_inst3("switch", '${ARCH}', "", "", 0));
+  foreach $arch (sort keys %{ $db{"INITIALIZE"} }) {
+    next if ($arch eq "default");
+    push(@p3, &new_inst3("case", $arch, "", "", 0));
+    foreach $i (sort keys %{ $db{"INITIALIZE"}{$arch} }) {
+      ($_ = $i) =~ s/^(\d+)://;
+      if (defined($db{"ACCUMULATE"}{$_})) {
+        push(@p3, &new_inst3("uninitvar", $_, 
+            "/INIT:".$db{"INITIALIZE"}{$arch}{$i}, 
+            "", 0));
+      }
+    }
+    push(@p3, &new_inst3("endcase", $arch, "", "", 0));
+  }
+
+  push(@p3, &new_inst3("endswitch", '${ARCH}', "", "", 0));
+
+  @p3;
+}
+
+
+sub pass3_ifscan {
+  # Handle the code that happens as we go between if clauses and
+  # non-if clauses.
+  #
+  my($in_if, $if_lhs, $if_rhs, $i, $linenum, @p3) = @_;
+
+  # If we were in an if statement but are no longer, then we
+  # close off this if and reset our if counter.
+  #
+  if($in_if && !($i->{"cond"})) {
+    push(@p3, &new_inst3("endif", $if_lhs, $if_rhs, "", $linenum-1));
+    $in_if = $if_lhs = $if_rhs = 0;
+    return($in_if, $if_lhs, $if_rhs, @p3);
+  }
+
+  # If we're heading into an if statement, and weren't in one
+  # before then we start an if, and we note that we're in one.
+  #
+  if(!$in_if && $i->{"cond"}) {
+    $in_if = $i->{"cond"};
+    $if_lhs = $i->{"test_lhs"};
+    $if_rhs = $i->{"test_rhs"};
+    if ($i->{"cond"} eq 1) {
+      push(@p3, &new_inst3("if", $if_lhs, $if_rhs, "", $linenum));
+    } else {
+      push(@p3, &new_inst3("ifnot", $if_lhs, $if_rhs, "", $linenum));
+    }
+    return($in_if, $if_lhs, $if_rhs, @p3);
+  }
+
+  # If we're in an if statement and we're heading into one,
+  # make sure it's the same one.  If not, close up the last
+  # one and make a new one.
+  #
+  if($in_if && $i->{"cond"}) {
+    if(($if_lhs eq $i->{"test_lhs"}) && 
+       ($if_rhs eq $i->{"test_rhs"}) && 
+       ($i->{"cond"} = $in_if)) {
+      # Do nothing - we're already in this if clause.  I just
+      # like the logic of the above statement rather than negging it.
+    } else {
+      push(@p3, &new_inst3("endif", $if_lhs, $if_rhs, "", $linenum-1));
+      $in_if = $i->{"cond"};
+      $if_lhs = $i->{"test_lhs"};
+      $if_rhs = $i->{"test_rhs"};
+      if ($i->{"cond"} eq 1) {
+        push(@p3, &new_inst3("if", $if_lhs, $if_rhs, "", $linenum));
+      } else {
+        push(@p3, &new_inst3("ifnot", $if_lhs, $if_rhs, "", $linenum));
+      }
+      return($in_if, $if_lhs, $if_rhs, @p3);
+    }
+  }
+  return($in_if, $if_lhs, $if_rhs, @p3);
+}
+
+sub pass3_add_dumpenv {
+  # Now we cheat and sneak another pass through.  We go from the top
+  # and add a 'dumpenv' to the instruction queue after any series of
+  # 'add's.
+  #
+  # May need to do this after any series of adds and removes.  Not
+  # sure.
+  #
+  my(@p3) = @_;
+  my($lastcode, @n, $i) = ();
+
+  $lastcode = "";
+  foreach $i (@p3) {
+    if(($i->{"code"} ne $lastcode) && ($lastcode eq "add") &&
+          ($i->{"code"} ne "dumpenv")) {
+      push(@n, &new_inst3("dumpenv", $i->{"test_lhs"}, $i->{"test_rhs"}, 
+			  $i->{"arch"}, $i->{"linenum"}-1));
+    }
+    push(@n, $i);
+    $lastcode = $i->{"code"};
+  }
+
+  # Now check to see if the last instruction was an add.
+  $i = $p3[$#p3];
+  if($i->{"code"} eq "add") {
+    push(@n, &new_inst3("dumpenv", $i->{"test_lhs"}, $i->{"test_rhs"}, 
+			$i->{"arch"}, $i->{"linenum"}));
+  }
+
+  @n;
+}
+
+
+sub dump3 {
+  my($p, @d) = @_;
+  my($v);
+  
+  print "=== Pass $p values ===================================\n";
+  foreach $v (@d) {
+    print $v->{"linenum"}, ": ", $v->{"code"}, " ", $v->{"op1"}, " ", 
+    $v->{"op2"}, "\n";
+  }
+  print "=====================================================\n";
+}
+      
+
+# ===========================================================================
+# Pass 4 - Convert to codes that translate directly to printing commands
+# ===========================================================================
+#  
+# Walk through the pass3 instructions, and turn them into 
+# lines that can be converted directly to shall code.  Keywords are
+# the only really tricky part of this.
+#
+# Introduce a few new instructions to the pass3 set:
+#   switch      op1: the var to switch on
+#   case        op1: the case to choose
+#   defcase     the 'default' case
+#   endcase     op1: the case that was chosen
+#   endswitch   op1: the end of the switch
+# 
+# Contiguous 'adds' are dumped into an environment, which is this
+# format:
+#  $env->{"<arch>"}{"<var>"} = a string for that var
+#
+
+
+sub pass4 {
+  # The only non-obvious instruction is the 'add', which collects information
+  # into an env hash rather than resulting in a shell printing command.
+  # These are then printed by the next dumpenv.
+  #
+  # Some shell-level optimizations could be introduced here in the
+  # append code, where we keep track of whether or not the variable
+  # has already been set or not, so don't have to do the sh-level
+  # checks for empty variables.  (Next version.)
+  #
+  my(@p3) = @_;
+  my(@p4, $env, $i) = ();
+  my($keyword);
+
+  $env = {};
+
+  foreach $i (@p3) {
+    if($i->{"code"} eq "nontrivialadd") {
+      @p4 = &pass4_nontrivialadd($i, @p4);
+      next;
+    }
+    if($i->{"code"} eq "add") {
+      $env = &pass4_add($i, $env);
+      next;
+    }
+    if($i->{"code"} eq "dumpenv") {
+      @p4 = &pass4_dumpenv($i, $env, @p4); 
+      $env = {};
+      next;
+    } 
+    if($i->{"code"} eq "append") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "set") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "if") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "ifnot") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "endif") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "delvar") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "initvar") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "uninitvar") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "error") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "switch") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "case") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "endcase") {
+      push(@p4, $i);
+      next;
+    }
+    if($i->{"code"} eq "endswitch") {
+      push(@p4, $i);
+      next;
+    }
+    push(@p4, &new_inst3("error", 
+			 "strange instruction for pass4: " . $i->{"code"},
+			 $i->{"op2"}, "", $i->{"linenum"}));
+    $exitval = $error_val{"PARSE_PROBLEMS_W"};
+    $error_parms = $cacheprefix;
+  }
+
+  @p4;
+}
+
+sub pass4_nontrivialadd {
+  # This handles the keywords that can't simply be appended to existing 
+  # variables.  Either there is an environment conditional that brings about 
+  # new conditions to handle, or the variables have to be ordered, which 
+  # would be a huge mess.
+
+  my($i, @p4) = @_;
+  my(@arches, $a, $keyword, $arch);
+  my($linenum);
+  my($lhs, $rhs, $var, @econorder, $number);
+  my(@var_order);
+
+  $arch = $i->{"arch"};
+  $keyword = $i->{"op1"};
+  $linenum = $i->{"linenum"};
+
+  push(@p4, &new_inst3("switch", '${ARCH}', "", $arch, $linenum));
+
+  if ($arch) {
+    push(@arches, $arch);
+  } else {
+    @arches = (sort(keys(%supported)));
+    push(@arches, "default");
+  }
+
+  foreach $a (@arches) {
+    if (defined($db{"ENV"}{$keyword}{$a})) {
+      if ($a eq "default") {
+        push(@p4, &new_inst3("defcase", $a, "", $arch, $linenum));
+      } else {
+        push(@p4, &new_inst3("case", $a, "", $arch, $linenum));
+      }
+      if (defined($db{"ENV"}{$keyword}{$a}{"ECONS"})) {
+        @econorder = split / /,$db{"ENV"}{$keyword}{$a}{"ECONS"}{"ORDER"};
+        $number = 1;
+        foreach $_ (@econorder) {
+          next if (! $db{"ENV"}{$keyword}{$a}{$_});
+          if (/(.*)\!\=(.*)/) {
+            $lhs = $1;
+            $rhs = $2;
+            if ($number == 1) {
+              push(@p4, &new_inst3("econifnot", $lhs, $rhs, $arch, $linenum));
+            } else {
+              push(@p4, &new_inst3("moreeconifnot", $lhs, $rhs, $arch, $linenum));
+            }
+          } else {
+            (/(.*)\=(.*)/);
+            $lhs = $1;
+            $rhs = $2;
+            if ($number == 1) {
+              push(@p4, &new_inst3("econif", $lhs, $rhs, $arch, $linenum));
+            } else {
+              push(@p4, &new_inst3("moreeconif", $lhs, $rhs, $arch, $linenum));
+            }
+          }
+          if ($db{"FLAGS"}{$keyword} =~ /ordered/) {
+            # Let's do these variables in order.
+            @var_order = split(/ /, $db{"ENV"}{$keyword}{$a}{$_}{"SOFT_VAR_ORDER"});
+          } else {
+            @var_order = sort keys %{ $db{"ENV"}{$keyword}{$a}{$_} };
+          }
+          foreach $var (@var_order) {
+            next if ($var eq "SOFT_VAR_ORDER");
+            if ($var =~ /^command(\d+)/) {
+              push(@p4, &new_inst3("command",
+                  $db{"ENV"}{$keyword}{$a}{$_}{$var}, "", $arch, $linenum));
+            } elsif($var =~ /^source(\d+)/) {
+              push(@p4, &new_inst3("source",
+                  $db{"ENV"}{$keyword}{$a}{$_}{$var}, "", $arch, $linenum)); 
+            } elsif($db{"ACCUMULATE"}{$var}) {
+              push(@p4, &new_inst3("append", $var,
+                  $db{"ENV"}{$keyword}{$a}{$_}{$var}, $arch,$linenum));
+            } else {
+              push(@p4, &new_inst3("set", $var,
+                  $db{"ENV"}{$keyword}{$a}{$_}{$var}, $arch,$linenum));
+            }
+          }
+          $number++;
+        }
+        if (defined($db{"ENV"}{$keyword}{$a}{"NO-ECON"})) {
+          push(@p4, &new_inst3("lasteconif", "", "", $arch,$linenum));
+          if ($db{"FLAGS"}{$keyword} =~ /ordered/) {
+            # Let's do these variables in order.
+            @var_order = split(/ /, $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{"SOFT_VAR_ORDER"});
+          } else {
+            @var_order = sort keys %{ $db{"ENV"}{$keyword}{$a}{"NO-ECON"} };
+          }
+          foreach $var (@var_order) {
+            next if ($var eq "SOFT_VAR_ORDER");
+            if ($var =~ /^command(\d+)/) {
+              push(@p4, &new_inst3("command",
+                  $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$var}, "", $arch, $linenum));
+            } elsif($var =~ /^source(\d+)/) {
+              push(@p4, &new_inst3("source",
+                  $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$var}, "", $arch, $linenum)); 
+            } elsif($db{"ACCUMULATE"}{$var}) {
+              push(@p4, &new_inst3("append", $var,
+                  $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$var}, $arch,$linenum));
+            } else {
+              push(@p4, &new_inst3("set", $var,
+                  $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$var}, $arch,$linenum));
+            }
+          }
+        }
+        push(@p4, &new_inst3("endeconif", "", "", $arch, $linenum));
+      } elsif (defined($db{"ENV"}{$keyword}{$a}{"NO-ECON"})) {
+        if ($db{"FLAGS"}{$keyword} =~ /ordered/) {
+          # Let's do these variables in order.
+          @var_order = split(/ /, $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{"SOFT_VAR_ORDER"});
+        } else {
+          @var_order = sort keys %{ $db{"ENV"}{$keyword}{$a}{"NO-ECON"} };
+        }
+        foreach $var (@var_order) {
+          next if ($var eq "SOFT_VAR_ORDER");
+          if ($var =~ /^command(\d+)/) {
+            push(@p4, &new_inst3("command",
+                $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$var}, "", $arch, $linenum));
+          } elsif($var =~ /^source(\d+)/) {
+            push(@p4, &new_inst3("source",
+                $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$var}, "", $arch, $linenum)); 
+          } elsif($db{"ACCUMULATE"}{$var}) {
+            push(@p4, &new_inst3("append", $var,
+                $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$var}, $arch,$linenum));
+          } else {   
+            push(@p4, &new_inst3("set", $var,
+                $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$var}, $arch,$linenum));
+          }
+        }
+      }
+      push(@p4, &new_inst3("endcase", $a, "", $arch, $linenum));
+    }
+  }
+  push(@p4, &new_inst3("endswitch", '${ARCH}', "", $arch, $linenum));
+  @p4;
+}
+
+
+sub pass4_add {
+  #  Given some keyword, add all the relevant variables for that keyword
+  #  to the environment.  Do that by looking them up in the db and then
+  #  adding to each arch section of the environment hash.
+  #
+  my($i, $env) = @_;
+  my(@arches, $a, $keyword, $arch, $v, @vars);
+
+  $arch = $i->{"arch"};
+  $keyword = $i->{"op1"};
+
+  # Set up the @arches array for iteration in the next loop.
+  #
+  # If we're inside an "if $ARCH =" clause (indicated by the presence
+  # of a $arch here), then we just do that one architecture.  Otherwise
+  # we go through all of them.  
+  # 
+  if($arch) {
+    push(@arches, $arch);
+  } else {
+    @arches = (sort(keys(%supported)));
+    push(@arches, "default");
+  }
+
+
+  # Get a list of variables for each of the arches we care about.
+  # For each of those, add them to the current environment that we're
+  # building.
+  #
+  foreach $a (@arches) {
+    if(defined($db{"ENV"}{$keyword}{$a}{"NO-ECON"})) {
+      @vars = keys( %{ $db{"ENV"}{$keyword}{$a}{"NO-ECON"} });
+      foreach $v (sort(@vars)) {
+        if($db{"ACCUMULATE"}{$v}) {
+          $env->{$a}{$v} = &pass4_accumulate($v, $env->{$a}{$v}, 
+              $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$v});
+        } else {
+          $env->{$a}{$v} = $db{"ENV"}{$keyword}{$a}{"NO-ECON"}{$v};
+        }
+      }
+    }
+  }
+  $env;
+}
+
+sub pass4_dumpenv {
+  my($i, $env, @p4) = @_;
+  my($arch, $linenum, @arches, @vars, $v, $a);
+
+  $arch = $i->{"arch"};
+  $linenum = $i->{"linenum"};
+
+  if($arch) {
+    push(@arches, $arch);
+  } else {
+    @arches = (sort(keys(%supported)));
+    push(@arches, "default");
+  }
+
+  # These statements make sure that something exists for this env variable
+  # It prevents lone switch ; endswitch statements
+  foreach $a (@arches) {
+    if(defined($env->{$a})) {
+      push(@p4, &new_inst3("switch", '${ARCH}', "", $arch, $linenum));
+      last;
+    }
+  }
+
+  foreach $a (@arches) {
+    if(defined($env->{$a})) {
+      if($a eq "default") {
+        push(@p4, &new_inst3("defcase", $a, "", $arch, $linenum));
+      } else {
+        push(@p4, &new_inst3("case", $a, "", $arch, $linenum));
+      }
+      @vars = keys(%{$env->{$a}});
+      foreach $v (@vars) {
+        if ($v =~ /^command(\d+)/) {
+          push(@p4, &new_inst3("command", $env->{$a}{$v}, "", $arch, $linenum));
+        } elsif($v =~ /^source(\d+)/) {
+          push(@p4, &new_inst3("source", $env->{$a}{$v}, "", $arch, $linenum));
+        } elsif($db{"ACCUMULATE"}{$v}) {
+          push(@p4, &new_inst3("append", $v, $env->{$a}{$v}, $arch, $linenum));
+        } else {
+          push(@p4, &new_inst3("set", $v, $env->{$a}{$v}, $arch, $linenum));
+        }
+      }
+      push(@p4, &new_inst3("endcase", $a, "", $arch, $linenum));
+    }
+  }
+
+  foreach $a (@arches) {
+    if(defined($env->{$a})) {
+      push(@p4, &new_inst3("endswitch", '${ARCH}', "", $arch, $linenum));
+      last;
+    }
+  }
+
+  @p4;
+}
+
+
+sub pass4_accumulate {
+  # Add a new value onto a pre-existing value.  This isn't too tricky,
+  # except you have to see if you should append, and if so, how you
+  # should append.
+  #
+  my($var, $old, $to_add) = @_;
+  my($sep, $proposed_val);
+
+  # The separator character is stored in the hash.
+  $sep = $db{"ACCUMULATE"}{$var};
+
+  # Append the new value, using the separator if the old string exists.
+  if($old) {
+    $proposed_val = $old . $sep . $to_add;
+  } else {
+    $proposed_val = $to_add;
+  }
+  
+  if($db{"UNIQUE"}{$var}) {
+    &pass4_uniquify($var, $proposed_val);
+  } else {
+    $proposed_val;
+  }
+}
+
+
+sub pass4_uniquify {
+  # Given a variable containing, theoretically, multiple sections separated
+  # by some separator, buzz through it making sure it has no duplicate parts.
+  #
+  my($var, $val) = @_;
+  my($sep, $e, %found, @new);
+
+  $sep = $db{"ACCUMULATE"}{$var};
+  
+  foreach $e (split(/$sep/, $val)) {
+    next if($found{$e});
+    $found{$e} = 1;
+    push(@new, $e);
+  }
+  
+  join($sep, @new);
+}
+	   
+
+# ===========================================================================
+# Pass 5 - taking instructions and generating real shell commands from them.
+# ===========================================================================
+# Incoming codes:
+#   delvar
+#   initvar
+#   uninitvar
+#   append
+#   unappend
+#   set
+#   unset
+#   if
+#   endif
+#   switch
+#   endswitch
+#   case
+#   defcase
+#   endcase
+#   error
+#
+# Outgoing datastructure
+#   $i{"code"}    - just like the above
+#   $i{"sh"}      - the lines of sh code that should be printed
+#   $i{"csh"}     - the lines of csh code that should be printed
+#
+
+sub pass5 {
+  my(@p4) = @_;
+  my(@p5, $i, %sh, %csh, $code, $op1, $op2, $entry, $sh_lines, $csh_lines);
+  my($lastlinenum, $linenum);
+
+  %sh = &set_sh_code();
+  %csh = &set_csh_code();
+	
+
+  foreach $i (@p4) {
+    $entry = "translating: $i->{'code'} $i->{'op1'}";
+    $code = $i->{"code"};
+    $op1 = $i->{"op1"};
+    $op2 = $i->{"op2"};
+
+    $sh_lines = &pass5_sub($sh{$code}, $op1, $op2, $entry);
+    $csh_lines = &pass5_sub($csh{$code}, $op1, $op2, $entry);
+    push(@p5, &new_inst5($code, $sh_lines, $csh_lines));
+  }
+
+  @p5;
+}
+
+sub pass5_sub {
+  # Take a string of shell script code and substitute in the variables.
+  #
+  my($lines, $variable, $value, $entry) = @_;
+  my($sep);
+  
+  $sep = $db{"ACCUMULATE"}{$variable};
+
+  $lines =~ s/%variable%/$variable/g;
+  $lines =~ s/%value%/$value/g;
+  $lines =~ s/%entry%/$entry/g;
+  $lines =~ s/%separator%/$sep/g;
+
+  $lines;
+}
+
+sub dump5 {
+  my($p, @d) = @_;
+  my($v);
+  
+  print "= Pass 5 ======================================================\n";
+  foreach $v (@d) {
+    print $v->{"sh"};
+  }
+}
+
+
+# ===========================================================================
+# Operations on instruction codes
+# ===========================================================================
+
+# Pass 1 and pass 2 instructions.
+#
+sub new_inst {
+  my($cond, $test_lhs, $test_rhs, $linenum, $entry, $code, $op1, $op2, 
+      $only_for_arch) = @_;
+  my(%t) = ();
+  
+  $t{"cond"} = $cond;
+  $t{"test_lhs"} = $test_lhs;
+  $t{"test_rhs"} = $test_rhs;
+  $t{"linenum"} = $linenum;
+  $t{"entry"} = $entry;
+  $t{"code"} = $code;
+  $t{"op1"} = $op1;
+  $t{"op2"} = $op2;
+  $t{"arch"} = $only_for_arch;
+
+  \%t;
+}
+
+# Pass 3 and pass 4 instructions.
+#
+sub new_inst3 {
+  my($code, $op1, $op2, $arch, $linenum) = @_;
+  my(%t) = ();
+  
+  $t{"code"} = $code;
+  $t{"op1"} = $op1;
+  $t{"op2"} = $op2;
+  $t{"arch"} = $arch;
+  $t{"linenum"} = $linenum;
+
+  \%t;
+}
+
+sub new_inst5 {
+  my($code, $sh, $csh) = @_;
+  my(%t) = ();
+  
+  $t{"code"} = $code;
+  $t{"sh"} = $sh;
+  $t{"csh"} = $csh;
+
+  \%t;
+}
+
+
+# ===========================================================================
+# output - actually writing the code to files
+# ===========================================================================
+
+sub output {
+  # Return a 0 on failure, 1 on success.
+  #
+  my($p0, @p5) = @_;
+  my(@contents, @error_lines);
+
+  @contents = &output_contents($p0, $softfile);
+  @error_lines = &output_errors();
+
+  &output_file("sh", \@contents, \@error_lines, \@p5) &&
+    &output_file("csh", \@contents, \@error_lines, \@p5);
+}
+
+
+sub output_file {
+  # Returns 1 on success, 0 on failure.
+  #
+  my($shell, $contents, $error_lines, $p5) = @_;
+  my($cachetemp, $cachefile);
+  my($header, @shell_lines, $f);
+  
+  $cachefile = "$cacheprefix.$shell";
+  $cachetemp = "$cachefile.$$";
+
+  $header = &output_header($shell, $cachefile);
+  @shell_lines = &output_indent($shell, $p5);
+
+  if(!open(CACHE, ">$cachetemp")) {
+    $exitval = $error_val{"CREATION_ERRORS"};
+    $error_parms = $cachetemp;
+    return 0;
+  }
+  foreach $f ($header, @{$contents}, @{$error_lines}, @shell_lines) {
+    print CACHE "$f";
+  }
+  print CACHE "\n# This is the end of $cachefile\n";
+  close(CACHE);
+
+  &output_install_cache($cachetemp, $cachefile);
+}
+
+
+sub output_header {
+  my($shell, $cachefile) = @_;
+  my($lines);
+  my($date);
+  
+  $date = localtime(time);
+
+  if($shell eq "sh") {
+    $lines = &set_sh_header();
+  }
+  if($shell eq "csh") {
+    $lines = &set_csh_header();
+  }
+
+  $lines =~ s/%cache_name%/$cachefile/;
+  $lines =~ s/%date%/$date/;
+  $lines =~ s/%file%/$softfile/;
+
+  ($lines);
+}
+
+
+sub output_contents {
+  my($p0, $file) = @_;
+  my($l, @c);
+
+  push(@c, "#\n");
+  push(@c, "# Contents of $file:\n");
+  push(@c, "#\n");
+  foreach $l (@{$p0}) {
+    push(@c, "# $l\n");
+  }
+  push(@c, "#\n");
+  push(@c, "# " . "=" x 75 . "\n");
+
+  @c;
+}
+
+sub output_errors {
+  my(@e, $i);
+
+  push(@e, "#\n");
+  push(@e, "# Errors while reading this file:\n");
+  push(@e, "#\n");
+  if(@errors) {
+    foreach $i (@errors) {
+      push(@e, "# Line ", $i->{"linenum"}, ": ", $i->{"entry"}, "\n");
+      push(@e, "#  Error: ", $i->{"op1"}, "\n");
+    }
+  } else {
+    push(@e, "# None.");
+  }
+  push(@e, "#\n");
+  push(@e, "# " . "=" x 75 . "\n");
+
+  @e;
+}
+
+sub output_indent {
+  my($shelltype, $p5) = @_;
+  my($indent, $i, $n, @lines);
+  my(@shellcode);
+
+  $indent = 0;
+  foreach $i (@{$p5}) {
+    @lines = split(/\n/, $i->{$shelltype});
+    if(($i->{"code"} eq "endswitch") ||
+       ($i->{"code"} eq "endif") || ($i->{"code"} eq "endeconif") ||
+       ($i->{"code"} eq "endcase") || ($i->{"code"} eq "lasteconif") ||
+       ($i->{"code"} eq "moreeconif") || ($i->{"code"} eq "moreeconifnot")) {
+      $indent -= 2;
+    }
+    foreach $n (@lines) {
+     push(@shellcode, " " x $indent, $n, "\n");
+    }
+    if(($i->{"code"} eq "switch") ||
+       ($i->{"code"} eq "if") ||
+       ($i->{"code"} eq "defcase") ||
+       ($i->{"code"} eq "case") || 
+       ($i->{"code"} eq "econif") ||
+       ($i->{"code"} eq "lasteconif") ||
+       ($i->{"code"} eq "moreeconif") ||
+       ($i->{"code"} eq "ifnot") ||
+       ($i->{"code"} eq "econifnot") ||
+       ($i->{"code"} eq "moreeconifnot")) {
+      $indent += 2;
+    }
+  }
+  @shellcode;
+}
+
+
+sub output_install_cache {
+  # 0 on failure
+  # 1 on success
+  my($from, $to) = @_;
+  my($count, $tries) = (0,0);
+  my($lock, $testcheck);
+
+  $lock = "$to.lock";
+
+  if (-e $lock) {
+    if ((time - (stat($lock))[8]) > 60) {
+      # Lock file is old, removing it.
+      unlink($lock);
+      do {
+        link($from, $lock);
+        $count=(stat($from))[3];
+        $tries++;
+      } while($count != 2 && $tries < 8);
+      if ($tries == 8) {
+        # Lock file still exists, however we had just removed it because
+        # it was old.  Either another instance created a lock file or
+        # there is something really funky with the filesystem
+        # It also gives it 8 tries if another instance created it.
+        $exitval = $error_val{"CACHE_LOCKED"};
+        $error_parms = $to;
+        return 0;
+      }
+      # We created our lock file succesfully, but warn the user that it
+      # existed
+      $exitval = $error_val{"OLD_LOCK_FILE"};
+      $error_parms = $to;
+    } else {
+      do {
+        link($from, $lock); 
+        $count=(stat($from))[3];
+        $tries++;
+      } while($count != 2 && $tries < 8);
+      if ($tries == 8) {
+        # Recent lock file that we don't want to delete exists, but after
+        # waiting a long time, we decide to give an error
+        $exitval = $error_val{"CACHE_LOCKED"};
+        $error_parms = $to;
+        return 0;
+      }
+    }
+  }
+
+  # do transfer stuff
+  unlink($to);
+  link($from, $to);
+  unlink($from);
+  unlink($lock);
+
+  # These test to make sure the file was outputted completely
+  # which might not occur correctly if the file system is full
+  if (! open (TESTCACHE, $to)) {
+    $exitval = $error_val{"WRITE_ERRORS"};
+    $error_parms = $to;
+    return 0;
+  }
+  while (<TESTCACHE>) { $testcheck = $_};
+  if ($testcheck !~ (/This is the end of $to/)) {
+    $exitval = $error_val{"WRITE_ERRORS"};
+    $error_parms = $to;
+    return 0;
+  }
+  1;
+}
+
+
+
+
+# ===========================================================================
+# Database routines
+# ===========================================================================
+
+
+sub read_database {
+  # Read the software database, put it in a hash, return the hash.
+  # Instead of dropping P, M, E directly in, parse them into subhashes.
+  #
+  # Original routine in soft-msc
+  #  
+  my($file) = @_;
+  my($x, $key, $val, %db);
+     
+  print("Reading db file $file\n") if($debug);
+
+  open (DB, $file) || die "$program: Unable to open $file\n";
+  while(<DB>) {
+    $x = chomp;
+    if(! $x eq "\n") { $_ .= $x; }
+    ($key,$val)=split(/->/, $_, 2);
+      
+    if($key =~ s/^MACRO\://) {
+      $db{MACRO}{$key}=$val;
+    }
+    if($key =~ s/^MACRO_ARCHES\://) {
+      $db{MACRO_ARCHES}{$key}=$val;
+    }
+    if($key =~ s/^DESC\://) {
+      $db{DESC}{$key}=$val;
+    }
+    if($key =~ s/^ACCUMULATE\://) {
+      $db{ACCUMULATE}{$key}=$val;
+    }
+    if($key =~ s/^UNIQUE\://) {
+      $db{UNIQUE}{$key}=1;
+    }
+    if($key =~ s/^FLAGS\://) {
+      $db{FLAGS}{$key}=$val;
+    }
+    if($key =~ s/^GROUP\://) {
+      $db{GROUP}{$key}=$val;
+    }
+    if($key =~ /^INITIALIZE\:(.+):(\d+\:(.+)$)/) {
+      $db{INITIALIZE}{$1}{$2}=$val;
+    }
+    if($key =~ /^ENV:(.+):(.+):(.+):(.+)$/) {
+      $db{ENV}{$1}{$2}{$3}{$4}=&bracify($val);
+      if ($3 ne "NO-ECON") {
+        $econs{$1} = 1;
+      }
+    }
+  }  
+  close DB;
+  %db;
+}
+
+
+sub resolve_macro_simple {
+  # Resolve macros (recursively)
+  #
+  my(@keywords) = @_;
+  my($i);
+
+  for ($i = 0; $i < @keywords; $i++) {
+    if($keywords[$i] =~ /^\@/) {
+      splice(@keywords, $i, 1, 
+	     &resolve_macro_simple(split(/ /, $db{"MACRO"}{$keywords[$i]})));
+    }
+  }
+  return @keywords;
+}
+
+sub bracify {
+  # Take some string, like /home/foo/$ARCH and change it into
+  # /home/foo/${ARCH}.  This is done because, otherwise, shells can
+  # get fairly picky about what you append to such a string.
+  #
+  # We assume that only letters, numbers, and _ constitute variable
+  # names.
+  #
+  my($s) = @_;
+
+  while ($s =~ /\$[A-Za-z0-9_]+/) {
+    $s =~ s/\$([A-Za-z0-9_]+)/\$\{$1\}/;
+  }
+  $s;
+}
+
+
+# ===========================================================================
+# Shell script templates
+# ===========================================================================
+# Implementing these pass5 instructions:
+#   delvar
+#   initvar
+#   uninitvar
+#   append
+#   unappend
+#   set
+#   unset
+#   if
+#   endif
+#   switch
+#   endswitch
+#   case
+#   endcase
+#   error
+
+sub set_sh_code {
+  my(%sh_code);
+
+  # -----------------------------------------------------------------
+  $sh_code{"delvar"} = <<'eol';
+
+# Initialize %variable%
+%variable%=''
+export %variable%
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"initvar"} = <<'eol';
+
+# %entry%
+%variable%=%value%
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"uninitvar"} = <<'eol';
+
+# %entry%
+SOFT_REMOVE=%value%
+%variable%=`echo $%variable% | sed -e "s#:${SOFT_REMOVE}[^:]*##g" -e "s#^${SOFT_REMOVE}[^:]*:\{0,1\}##"`
+unset SOFT_REMOVE
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"append"} = <<'eol';
+
+# %entry%
+if [ "x${%variable%}" = "x" ]; then
+  %variable%=%value% ; export %variable%
+else
+  %variable%=${%variable%}%separator%%value%
+fi
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"unappend"} = <<'eol';
+
+# %entry% - unappending %variable%
+if [ "x${%variable%}" != "x" ]; then
+  SOFT_REMOVE=%value%
+  %variable%=`echo $%variable% | sed -e "s+^${SOFT_REMOVE}:++g" -e "s+:${SOFT_REMOVE}\$++g" -e "s+^${SOFT_REMOVE}\$++g" -e "s+:${SOFT_REMOVE}:+:+g"`
+  unset SOFT_REMOVE
+fi
+eol
+
+
+  # -----------------------------------------------------------------
+  $sh_code{"set"} = <<'eol';
+
+# %entry%
+%variable%=%value% ; export %variable%
+eol
+
+
+  # -----------------------------------------------------------------
+  $sh_code{"unset"} = <<'eol';
+
+# %entry% - unsetting %variable%
+unset %variable%
+eol
+
+
+  # -----------------------------------------------------------------
+  $sh_code{"if"} = <<'eol';
+
+# %entry%
+if [ "$%variable%" = "%value%" ]; then
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"ifnot"} = <<'eol';
+
+# %entry%
+if [ "$%variable%" != "%value%" ]; then
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"endif"} = <<'eol';
+
+fi
+# End of if [ "$%variable%" = "%value%" ]
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"switch"} = <<'eol';
+
+# %entry%
+case %variable% in
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"endswitch"} = <<'eol';
+
+esac
+# End of case $%variable%
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"case"} = <<'eol';
+
+%variable%)
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"defcase"} = <<'eol';
+
+*)
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"endcase"} = <<'eol';
+
+;;
+#  End of %variable% case choice
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"error"} = <<'eol';
+
+# %error%
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"econif"} = <<'eol';
+
+# start of environment-conditional if statement
+if [ "$%variable%" = "%value%" ]; then
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"moreeconif"} = <<'eol';
+
+# continuation of environment-conditional if statement
+elif [ "$%variable%" = "%value%" ]; then
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"econifnot"} = <<'eol';
+
+# start of environment-conditional if statement
+if [ "$%variable%" != "%value%" ]; then
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"moreeconifnot"} = <<'eol';
+
+# continuation of environment-conditional if statement
+elif [ "$%variable%" != "%value%" ]; then
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"lasteconif"} = <<'eol';
+
+# default of environment-conditional if statement
+else 
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"endeconif"} = <<'eol';
+
+# end of environment-conditional if statement
+fi
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"command"} = <<'eol';
+
+# a command to execute
+%variable%
+eol
+
+  # -----------------------------------------------------------------
+  $sh_code{"source"} = <<'eol';
+
+# a file to source
+. %variable%.sh
+eol
+
+  %sh_code;
+}
+
+
+sub set_csh_code {
+  my(%csh_code);
+
+  # -----------------------------------------------------------------
+  $csh_code{"delvar"} = <<'eol';
+
+# Initialize the environment.
+unsetenv %variable%
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"initvar"} = << 'eol';
+
+# %entry%
+setenv %variable% %value%
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"uninitvar"} = << 'eol';
+
+# %entry%
+setenv SOFT_REMOVE %value%
+setenv %variable% `echo $%variable% | sed -e "s#:${SOFT_REMOVE}[^:]*##" -e "s#^${SOFT_REMOVE}[^:]*:\{0,1\}##"`
+unsetenv SOFT_REMOVE
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"append"} = <<'eol';
+
+# %entry%
+if($?%variable%) then
+  setenv %variable% ${%variable%}%separator%%value%
+else
+  setenv %variable% %value%
+endif
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"unappend"} = <<'eol';
+
+# %entry%
+if(! $?%variable%) then
+  setenv SOFT_REMOVE
+  setenv %variable% `echo $%variable% | sed -e "s+^${SOFT_REMOVE}:++g" -e "s+:${SOFT_REMOVE}\$++g" -e "s+^${SOFT_REMOVE}\$++g" -e "s+:${SOFT_REMOVE}:+:+g"`
+  unsetenv SOFT_REMOVE
+endif
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"set"} = <<'eol';
+
+# %entry%
+setenv %variable% %value%
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"unset"} = <<'eol';
+
+# %entry%
+unsetenv %variable%
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"if"} = <<'eol';
+
+# %entry%
+if ("$%variable%" == "%value%") then
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"ifnot"} = <<'eol';
+
+# %entry%
+if ("$%variable%" != "%value%") then
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"endif"} = <<'eol';
+
+endif
+# End of if ("$%variable%" == "%value%")
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"switch"} = <<'eol';
+
+# %entry%
+switch (%variable%)
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"endswitch"} = <<'eol';
+
+endsw
+# End of switch (%variable%)
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"case"} = <<'eol';
+
+case %variable%:
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"defcase"} = <<'eol';
+
+default:
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"endcase"} = <<'eol';
+
+breaksw
+#  End of %variable% case choice
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"error"} = <<'eol';
+
+# %error%
+eol
+
+
+  # -----------------------------------------------------------------
+  $csh_code{"econif"} = <<'eol';
+  
+# start of environment-conditional if statement
+if ("$%variable%" == "%value%") then
+eol
+   
+  # -----------------------------------------------------------------
+  $csh_code{"moreeconif"} = <<'eol';
+  
+# continuation of environment-conditional if statement
+else if ("$%variable%" == "%value%") then
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"econifnot"} = <<'eol';
+  
+# start of environment-conditional if statement
+if ("$%variable%" != "%value%") then
+eol
+   
+  # -----------------------------------------------------------------
+  $csh_code{"moreeconifnot"} = <<'eol';
+  
+# continuation of environment-conditional if statement
+else if ("$%variable%" != "%value%") then
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"lasteconif"} = <<'eol';
+  
+# default of environment-conditional if statement
+else
+eol
+  
+  # -----------------------------------------------------------------
+  $csh_code{"endeconif"} = <<'eol';
+
+# end of environment-conditional if statement
+endif
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"command"} = <<'eol';
+
+# a command to execute
+%variable%
+eol
+
+  # -----------------------------------------------------------------
+  $csh_code{"source"} = <<'eol';
+
+# a command to execute
+source %variable%.csh
+eol
+
+  %csh_code;
+}
+
+
+sub set_csh_header {
+  &set_sh_header();
+}
+
+sub set_sh_header {
+  my($header);
+
+  $header = <<'eol';
+# %cache_name%
+# Created on %date%.
+#
+# DO NOT MODIFY THIS FILE DIRECTLY!!
+# If you do, your modifications will probably be overwritten.
+#
+# This file is created automatically by the soft system.  It is used
+# to build your environment.  It was generated from the contents of 
+# this file:
+#
+#  %file%
+#
+# If the contents of this file aren't correct, then modify that file, and 
+# type 'resoft'.  The contents of this file are listed below, as are
+# any errors found when parsing it.
+#
+# More information about the SoftEnv system can be found by typing 
+# 'man softenv-intro'.
+#
+# =========================================================================
+eol
+  
+  $header;
+}

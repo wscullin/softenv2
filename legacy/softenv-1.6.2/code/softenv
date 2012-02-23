@@ -1,0 +1,389 @@
+#!!PERL_PATH!
+#
+# softenv
+# lists every software key in the database
+#
+# This is part of Msys, the MCS Systems Administration Toolkit
+# For more information, see http://www.mcs.anl.gov/systems/software/ .
+# 
+# Copyright (c) University of Chicago 1999.
+# See the COPYRIGHT file in the distribution for details on the copyright.   
+# 
+# ===========================================================================
+# 
+# Description:
+#  softenv displays all of the keywords and macros available from the
+#  software database, complete with a description and flags to help the
+#  user.
+#
+# ===========================================================================
+# 
+# Authors and ID String:
+# 
+#   Alan Bailey, bailey@mcs.anl.gov
+# 
+# $Id: softenv,v 1.20 2007/02/05 20:46:49 navarro Exp $
+#
+# slightly modified by John Valdes, valdes@mcs.anl.gov so that keys and
+# descriptions don't get truncated when printed
+# 
+# ===========================================================================
+#
+#  softenv [-k string] [-a arch]
+#
+#   -k string        : only lists keys with <string> in their name
+#   -a arch          : only lists keys that will work on <arch>
+#   -u -h --help     : helpful stuff
+#   -v --version     : version
+#
+# ===========================================================================
+#
+# Exit Codes:
+#
+# 0 on success
+#
+# ===========================================================================
+
+use Getopt::Std;
+
+use strict;
+
+use vars qw(%defaults %db $string_of_archs $program);
+use vars qw($database $test_database);
+use vars qw($package_name $version %supported);
+use vars qw($regexp $regexp_comment $arch $architecture_comment);
+
+use vars qw($defaultflag $uflag $pflag $keyname $printkeyname $description);
+
+# This format is only used for printing the description; the first half
+# of the first line containing the flags and keyname are output by a "printf"
+# so that the key field can expand as needed (ie, so that the key isn't
+# truncated).  As a result, the first line of the format starts in midline.
+format STDOUT =
+ ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$description
+~~                                   ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$description
+.
+
+&set_globals;
+
+&print_header;
+
+&print_all;
+
+exit(0);
+
+
+# ===========================================================================
+# Subroutines
+# ===========================================================================
+
+sub set_globals {
+  push(@INC, 'SOFTENV_ETC_DIR');
+  require "softenv.config.pl";
+
+  ($program = $0) =~ s:.*/::;
+  $string_of_archs = join " ", keys %supported; 
+
+  %db = &read_database($database);
+  %defaults = &grab_defaults;
+
+  &parse_commandline;
+
+}
+
+sub parse_commandline {
+  # Parse the arguments on the command line.  First it checks for 
+  # --version and --help, then uses getopt to grab the other options.
+  # sets $regexp, $arch, and others
+
+  use vars qw($opt_a $opt_c $opt_k $opt_h $opt_u $opt_v $opt_x);
+
+  if ($ARGV[0] eq "--version") {
+    &version;
+    exit(0);
+  }
+  if ($ARGV[0] eq "--help") {
+    &usage;
+    exit(0);
+  }
+  getopt('a:k:');
+  if ($opt_k) {
+    $regexp = $opt_k;
+    $regexp_comment = "Search Regexp: $regexp";
+  }
+  if ($opt_a) {
+    $arch = $opt_a;
+    $architecture_comment = "Keys and Macros for $arch.  ";
+    if (!$supported{"$arch"}) {
+      print "$program: Unknown architecture $arch given at command line\n";
+      exit(1);
+    }
+  }
+  if (($opt_h) or ($opt_u)) {
+    &usage();  
+    exit(0); 
+  }
+  if ($opt_v) {
+    &version();
+    exit(0);
+  } 
+}
+
+sub usage {
+  # Prints out the usage
+  # called when the correct argument is on the command line
+
+print <<"EOF";
+
+$program is part of $package_name version $version  
+    
+  Usage:
+    $program [-k string] [-a arch]
+     -k string      : only lists keys with <string> in their name
+     -a arch        : only lists keys that will work on <arch>
+     -u -h --help   : helpful stuff
+     -v --version   : version
+      
+  Purpose:
+     $program is part of the $package_name system.  The program
+     softenv lists all of the keys and macros recognized
+     by the SoftEnv system. This program is designed to help users   
+     edit their SOFTENVRC correctly by associating each program with a
+     key.
+EOF
+}
+
+sub version {
+  # Prints out the program name, package, and version
+  # called whenever the correct argument is on the command line
+
+print <<"EOF";
+
+$program is part of $package_name version $version
+  
+EOF
+}
+
+
+sub read_database {
+  # Read the software database, put it in a hash, return the hash.
+  # Instead of dropping P, M, E directly in, parse them into subhashes.
+  #
+  # Original routine in soft-msc
+  #
+  my($file) = @_;
+  my($x, $key, $val, %db);
+
+  open (DB, $file) || die "$program: Unable to open $file\n";
+  while(<DB>) {
+    $x = chomp;
+    if(! $x eq "\n") { $_ .= $x; }
+    ($key,$val)=split(/->/, $_, 2);
+
+    if($key =~ s/^MACRO\://) {
+      $db{MACRO}{$key}=$val;
+    }
+    if($key =~ s/^MACRO_ARCHES\://) {
+      $db{MACRO_ARCHES}{$key}=$val;
+    }
+    if($key =~ s/^DESC\://) {
+      $db{DESC}{$key}=$val;
+    }
+    if($key =~ s/^ACCUMULATE\://) {
+      $db{ACCUMULATE}{$key}=$val;
+    }
+    if($key =~ s/^UNIQUE\://) {
+      $db{UNIQUE}{$key}=1;
+    }
+    if($key =~ s/^FLAGS\://) {
+      $db{FLAGS}{$key}=$val;
+    }
+    if($key =~ s/^GROUP\://) {
+      $db{GROUP}{$key}=$val;
+    }
+    if($key =~ /^INITIALIZE\:(.+):(\d+\:(.+)$)/) {
+      $db{INITIALIZE}{$1}{$2}=$val;
+    }
+    if($key =~ /^ENV:(.+):(.+):(.+):(.+)$/) {
+      $db{ENV}{$1}{$2}{$3}{$4}=&bracify($val);
+    }
+  }
+  close DB;
+  %db;
+}
+
+sub bracify {
+  # Take some string, like /home/foo/$ARCH and change it into
+  # /home/foo/${ARCH}.  This is done because, otherwise, shells can
+  # get fairly picky about what you append to such a string.
+  #
+  # We assume that only letters, numbers, and _ constitute variable
+  # names.
+  #
+  # Original routine in soft-msc
+  #
+  my($s) = @_;
+
+  while ($s =~ /\$[A-Za-z0-9_]+/) {
+    $s =~ s/\$([A-Za-z0-9_]+)/\$\{$1\}/;
+  }
+  $s;
+}
+
+
+
+sub print_all {
+  # Subroutine used to print.  First it prints out the macros.
+  # Then, based on $arch, prints out the keywords available
+  # for that arch or all possible arches.
+
+  my($package);
+
+  print "<softenv>\n" if ($opt_x);
+  print "\nThese are the macros available:\n\n" unless (($opt_c) or ($opt_x));
+  foreach $package (sort keys %{ $db{"MACRO"} }) {
+    if ($arch) {
+      if (($db{"MACRO_ARCHES"}{$package}.' ') =~ /$arch /) {
+        &print_entry($package);
+      }
+    } else {
+        &print_entry($package);
+    }
+  }
+  print "\n\nThese are the keywords explicitly available:\n\n" unless (($opt_c) or ($opt_x));
+  foreach $package (sort keys %{ $db{"ENV"} }) {
+    if ($db{"FLAGS"}{$package} !~ /auto/) {
+      if ($arch) {
+        if (($db{"ENV"}{$package}{$arch}) or 
+            ($db{"ENV"}{$package}{"default"})) {
+          &print_entry($package);
+        }
+      } else {
+        &print_entry($package);
+      }
+    }
+  }
+  print "\nThese are the keywords that are part of the software tree,\n" unless (($opt_c) or ($opt_x));
+  print "however, it is not suggested that you use these:\n\n" unless (($opt_c) or ($opt_x));
+  foreach $package (sort keys %{ $db{"ENV"} }) {
+    if ($db{"FLAGS"}{$package} =~ /auto/) {
+      if ($arch) {
+        if (($db{"ENV"}{$package}{$arch}) or
+            ($db{"ENV"}{$package}{"default"})) {
+          &print_entry($package);
+        }
+      } else {
+        &print_entry($package);
+      }
+    }
+  }
+  print "</softenv>\n" if ($opt_x);
+}
+
+
+sub print_entry {
+  # Subroutine that prints out each individual package
+  # Pretty straightforward, fills in all the variables for the format
+  # at the top of the code, then does a write at the end
+  # arch checking is not done here, but regexp checking is done here.
+
+
+  $keyname = $_[0];
+  $pflag = "";
+  $defaultflag = "";
+  $uflag = "";
+  if (($db{"DESC"}{$keyname}) and 
+      ($db{"DESC"}{$keyname} !~ /No description set/)) {
+    $description = $db{"DESC"}{$keyname};
+  } else {
+    $description = "";
+  }
+
+  if ($regexp) {
+    return unless
+        (($keyname =~ /$regexp/i) or ($description =~ /$regexp/i));
+  }
+  return if ($db{"FLAGS"}{$keyname} =~ /hide/);
+  $uflag = "U" if ($db{"FLAGS"}{$keyname} =~ /useful/);
+  $pflag = "P" if ($db{"FLAGS"}{$keyname} =~ /power/);
+  $defaultflag = "*" if (exists $defaults{$keyname});
+  if ($opt_c) {
+     ($printkeyname = $keyname) =~ s/\W/_/g;
+     print "softenv$printkeyname = \"$keyname\"\n";
+     print "softenv$printkeyname\.desc = \"$description\"\n";
+  } elsif ($opt_x) {
+     print "  <entry>\n";
+     print "    <key>$keyname</key>\n";
+     print "    <desc>$description</desc>\n";
+     print "  </entry>\n";
+  } else {
+     # print key using a printf so that it's not truncated if longer than 
+     # than a format field
+     printf("%1s%1s%1s %-30s",$defaultflag,$uflag,$pflag,$keyname);
+     # if key is longer than its field width, start a new line for the
+     # description, and pad the new line with spaces; should probably put
+     # the field width in a var rather than hard coding it here and in the
+     # printf above
+     print "\n", " " x 34 if (length($keyname) > 30);
+     # use a format for the description, to get multiline wrapping
+     write;
+  }
+}
+
+sub print_header {
+  return if (($opt_c) or ($opt_x));
+  # Prints out the header 
+
+print <<TOPWORDS;
+$package_name version $version
+
+The SoftEnv system is used to set up environment variables.  For details,
+see 'man softenv-intro'.
+
+This is a list of keys and macros that the SoftEnv system understands.
+In this list, the following symbols indicate:
+  *  This keyword is part of the default environment, which you get by
+     putting "\@default" in your SOFTENVRC
+  U  This keyword is considered generally "useful".
+  P  This keyword is for "power users", people who want to build their
+     own path from scratch.  Not recommended unless you know what you
+     are doing.
+
+$architecture_comment$regexp_comment
+----------------------------------------------------------------------------
+TOPWORDS
+
+}
+
+
+sub grab_defaults {
+  # Get the keywords that are part of @default, and make a hash specifying
+  # them.
+  my(@defaults);
+  my(%defaults);
+
+  @defaults = &resolve_macro("\@default");
+  foreach (@defaults) {
+    $defaults{$_} = "1";
+  }
+  %defaults;
+}
+
+sub resolve_macro {
+  # Takes a macro and returns an array containing every key at every level
+  # of that macro.  In this program it is only used on @default
+  # Recursive algorithm that returns an array at each level.
+
+  my(@keywords) = @_;
+  my($i);
+
+  for ($i = 0; $i < @keywords; $i++) {
+    if($keywords[$i] =~ /^\@/) {
+      splice(@keywords, $i, 1, ($keywords[$i],
+          &resolve_macro(split(/ /, $db{"MACRO"}{$keywords[$i]}))))
+    }
+  }
+  return @keywords;
+}

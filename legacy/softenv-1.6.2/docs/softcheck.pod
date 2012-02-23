@@ -1,0 +1,30 @@
+=head1 NAME
+
+softcheck - recreate the software environment based on the test database
+
+=head1 DESCRIPTION
+
+This command recreates the working environment with one command just like
+'resoft' does.  However, this command creates a test database to work
+with, instead of the normal soft.dbc.  This is meant to be used to test
+changes made to the database before they are put into the working
+database.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled softcheck. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+softcheck [file]
+
+=over
+
+=item file
+
+If a file is listed, that file is used to recreate the software
+environment instead of your SOFTENVRC file.
+
+=back

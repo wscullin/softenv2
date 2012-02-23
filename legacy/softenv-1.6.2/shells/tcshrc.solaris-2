@@ -1,0 +1,148 @@
+#
+# tcshrc
+#  The global tcshrc file.  This file sets up the basic defaults for
+#  people using tcsh on the solaris-2 platform.  
+#
+#  This shell gets read by tcsh on every invocation of tcsh, including:
+#   - login shells            if($shlvl == 1)
+#   - non-login shells        if($shlvl == 2)
+#   - rsh command scripts     if($prompt == 0)
+#   - csh scripts             if($prompt == 0)
+#
+#  It is read first, followed by /etc/csh.login if it's a login shell.
+#  Then it tries to read $HOME/.tcshrc.  If that's not there, it looks
+#  for $HOME/.cshrc.  Finally it goes for $HOME/.login if it's a login
+#  shell.
+#
+#  The job in this file is to setup the global environment and then
+#  get through as quickly and quietly as possible.
+#
+# ===========================================================================
+
+# If this shell is running as a subshell that has already been initialized
+# we don't want to re-initialize any environment variables.   The ENVIRONRC 
+# variable is set later as flag indicating that this script has been run.
+
+if ($?ENVIRONRC) goto skipenviron
+
+# --------------------------------------------------------------------------- 
+# Setting environment variables for interactive and non-interactive shells.
+# --------------------------------------------------------------------------- 
+
+# Set the architecture variable: $ARCH.
+# tcsh is nice enough to do this already in the $HOSTTYPE variable.
+# We could check to make sure that ARCH gets set, but we're trusting
+# our versions of tcsh.
+#
+setenv ARCH "${HOSTTYPE}"
+
+# Set HOSTNAME to the short version of the hostname
+#
+setenv HOSTNAME `hostname | sed 's/\..*$//'`
+
+# Set up the PATH and MANPATH.  The real place to do this is in 
+# the .software system lower down, but we set it first here in case 
+# something goes wrong (such as NFS breaking).
+#
+# Note - directories in /software are not included in these default
+# paths because /usr/local should collect the majority of these directories.
+#
+setenv PATH /bin:/usr/bin:/usr/openwin/bin:/usr/sbin
+setenv PATH "${PATH}:/opt/SUNWspro/bin:/usr/ccs/bin"
+setenv PATH "${PATH}:/usr/local/bin:/mcs/bin:/usr/ucb:."
+setenv MANPATH "/usr/man:/usr/openwin/man"
+setenv MANPATH "${MANPATH}:/usr/local/man:"
+setenv MANPATH "${MANPATH}:/opt/SUNWspro/man:/opt/SUNWits/Graphics-sw/xil/man"
+setenv MANPATH "${MANPATH}:/opt/SUNWrtvc/man:/opt/SUNWspro/SPROutool4.2/man"
+setenv MANPATH "${MANPATH}:/opt/SUNWspro/TW2.0/man:/opt/SUNWspro/WS4.0/man"
+setenv MANPATH "${MANPATH}:/opt/SUNWspro/SC4.2/man"
+setenv MANPATH "${MANPATH}:/opt/SUNWste/license_tools/man"
+
+
+# Now we invoke the .software system, unless they have a .nosoft file.
+# At the present time, we are supporting software systems using both
+# SOFTENVRC and .software.  SOFTENVRC is the newer one.  Look for that first.
+#
+if ( -e $HOME/.nosoft ) then
+  # Do nothing.
+else if ( -r $HOME/SOFTENVRC ) then
+  if ( -r /home/evard/proj/software/test/etc/software-env.csh ) then
+     source /home/evard/proj/software/test/etc/software-env.csh
+  else
+     echo "Unable to load the SOFTENVRC test system"
+  endif
+else if ( -r $HOME/.software-beta ) then
+  if ( -r /software/common/adm/packages/software-5.0/etc/software-env.csh) then
+     source  /software/common/adm/packages/software-5.0/etc/software-env.csh
+  else
+     echo "Unable to load the software system"
+  endif
+endif
+
+
+# This is to make the World Wide Web easier to use
+setenv WWW_HOME "http://www.mcs.anl.gov/"
+
+setenv OPENWINHOME /usr/openwin
+setenv LD_LIBRARY_PATH /usr/openwin/lib
+
+
+# Set a flag to skip this next time.
+setenv ENVIRONRC 1
+
+skipenviron:
+
+# ---------------------------------------------------------------------------
+# Setting shell variables for interactive and non-interactive shells.
+# We can't skip these on sub-shells because they don't get inherited.
+# ---------------------------------------------------------------------------
+
+# Set the user's default umask (-rw-r--r-- permission on new files).
+umask 022
+
+
+# ---------------------------------------------------------------------------
+# Set shell variables for interactive shells
+# ---------------------------------------------------------------------------
+if($?prompt) then
+
+  # Set the prompt
+  set prompt = "%m %% "
+  if ( "$uid" == "0" ) set prompt = "%m # "
+
+  # Set nice tcsh defaults
+  set nostat = ( /mcs /home )
+  set autolist
+  set ignoreeof
+  set history = 100
+  set savehist = 100
+  set savehist = 0
+  set rmstar
+  set noclobber
+  bindkey  backward-delete-word
+  unset autolist
+  unset autologout
+
+  # Set the resoft alias here, outside of the environrc area, because
+  # subshells won't inherit it.
+
+  if ( -e $HOME/.nosoft ) then
+    # Do nothing.
+  else if ( -r $HOME/SOFTENVRC ) then
+    alias resoft 'New resoft command'
+  else if ( -r $HOME/.software-beta ) then
+    alias resoft '/software/common/adm/bin/make-sw-cache \!*; source ${HOME}/.software-cache.csh'
+  else if ( -r $HOME/.software ) then
+    alias resoft '/mcs/etc/make-sw-cache; source ${HOME}/.software-cache.csh'
+  endif
+
+# ===========================================================================
+
+# resoft function needs to be defined here, outside of the environrc
+# block, because subshells won't necessarily inherit it.
+if ( -r "$HOME"/.software-beta ) then
+    set softhome=/software/common/adm
+    alias resoft '$softhome/bin/make-sw-cache \!*; source ${HOME}/.software-cache.csh'
+else
+	alias resoft '/mcs/etc/make-sw-cache; source ${HOME}/.software-cache.csh'
+endif

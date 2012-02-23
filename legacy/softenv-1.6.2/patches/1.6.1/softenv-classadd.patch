@@ -1,0 +1,38 @@
+53c53
+< use vars qw($defaultflag $uflag $pflag $keyname $description);
+---
+> use vars qw($defaultflag $uflag $pflag $keyname $printkeyname $description);
+56c56
+< @@@ @<<<<<<<<<<<<<<<<<<<<<<<<<<<<< @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+---
+> @@@ @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+93c93
+<   use vars qw($opt_a $opt_k $opt_h $opt_u $opt_v);
+---
+>   use vars qw($opt_a $opt_c $opt_k $opt_h $opt_u $opt_v);
+236c236
+<   print "\nThese are the macros available:\n\n";
+---
+>   print "\nThese are the macros available:\n\n" unless ($opt_c);
+246c246
+<   print "\n\nThese are the keywords explicitly available:\n\n";
+---
+>   print "\n\nThese are the keywords explicitly available:\n\n" unless ($opt_c);
+259,260c259,260
+<   print "\nThese are the keywords that are part of the software tree,\n";
+<   print "however, it is not suggested that you use these:\n\n";
+---
+>   print "\nThese are the keywords that are part of the software tree,\n" unless ($opt_c);
+>   print "however, it is not suggested that you use these:\n\n" unless ($opt_c);
+302c302,308
+<   write;
+---
+>   if ($opt_c) {
+>      ($printkeyname = $keyname) =~ s/\W/_/g;
+>      print "softenv$printkeyname = \"$keyname\"\n";
+>      print "softenv$printkeyname\.desc = \"$description\"\n";
+>   } else {
+>      write;
+>   }
+305a312
+>   return if ($opt_c);

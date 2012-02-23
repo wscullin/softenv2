@@ -1,0 +1,8 @@
+90,92c90,92
+<     if [ $?prompt ]; then
+<       echo "$softname: updating your software environment, one moment..."
+<     fi
+---
+> #   if [ $?prompt ]; then
+> #     echo "$softname: updating your software environment, one moment..."
+> #   fi

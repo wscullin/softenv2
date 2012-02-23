@@ -1,0 +1,35 @@
+=head1 NAME
+
+soft-mwl - creates a webpage log of the changes to the soft.db database
+
+=head1 DESCRIPTION
+
+This program soft-mwl generates a webpage put into the etc/ directory
+based on the changes to soft.db reported by the RCS rlog command.  RCS
+must be used with soft.db for this to run.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft-mwl. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+soft-mwl [C<-d>]
+
+=over
+
+=item -d
+
+This option turns on debugging.
+
+=item -u -h --help
+
+Helpful messages
+
+=item -v --version
+
+Version
+
+=back

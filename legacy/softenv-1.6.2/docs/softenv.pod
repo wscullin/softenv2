@@ -1,0 +1,50 @@
+=head1 NAME
+
+softenv - lists all of the keys and macros recognized by the SoftEnv system.
+
+=head1 DESCRIPTION
+
+The program softenv lists all of the keys and macros recognized by the
+SoftEnv system.  This program is designed to help users edit their SOFTENVRC
+correctly by associating each program with a key.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled softenv. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+softenv [C<-c>] [C<-x>] [C<-k> string] [C<-a> arch]
+
+=over
+
+=item -k <string>
+
+This option only lists keys or macros with <string> in their name or in
+their description.
+
+=item -a <arch>
+
+This option only lists keys and macros that are available on <arch>.  The
+default is to display every key and macro for every arch.
+
+=item -c
+
+Lists keys and descriptions in Condor ClassAdd format.
+
+=item -x
+
+Lists keys and descriptions in XML format.
+
+=item -u -h --help
+=item -u -h --help
+
+Helpful messages
+
+=item -v --version
+
+Version
+
+=back

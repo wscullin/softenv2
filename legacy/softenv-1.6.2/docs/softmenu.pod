@@ -1,0 +1,27 @@
+=head1 NAME
+
+softmenu - dynamically change the environment through a menu
+
+=head1 DESCRIPTION
+
+softmenu displays a menu and lets the user choose a key from a group,
+then that key is added to their environment and everything related to it
+is deleted.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+softmenu group
+
+=over
+
+=item group
+
+The group that you want to pick a keyword from
+
+=back

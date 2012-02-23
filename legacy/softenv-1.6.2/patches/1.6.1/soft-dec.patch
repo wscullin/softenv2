@@ -1,0 +1,53 @@
+15c15
+< #  soft-dec is used to implement the 'soft add' and 'soft delete'
+---
+> #  soft-dec is used to implement the 'soft [add,delete,append]'
+30c30
+< #  soft-dec [-d -t] csh|sh add|delete keyword
+---
+> #  soft-dec [-d -t] csh|sh add|delete|append keyword
+33,34c33,34
+< #   add|delete       : operation, either add or delete
+< #   keyword          : keyword or macro to add or delete
+---
+> #   add|delete|append: operation, either add, delete, or append
+> #   keyword          : keyword or macro to add, delete, or append
+91c91
+<   # actual parameters csh|sh, add|del, and keyword
+---
+>   # actual parameters csh|sh, add|del|app, and keyword
+136a137,138
+>   } elsif ($ARGV[1] eq "append") {
+>     $op = "app";
+181a184,185
+>   } elsif ($op eq "app") {
+>     print "Outputting shell lines for appending\n" if $debug;
+191c195
+<     # Do either the addition or deletion
+---
+>     # Do either the addition, deletion, or appending
+195a200,201
+>     } elsif ($op eq "app") {
+>       &output_addition();
+202a209,210
+>   } elsif ($op eq "app") {
+>     print "Done outputting appending lines\n" if $debug;
+293a302,304
+>         } elsif ($op eq "app") {
+>           print "setenv $var \$\{$var\}",
+>                 $db{"ACCUMULATE"}{$var}, "$envvars{$var} \;\n";
+308c319,322
+<           print "$var=$envvars{$var} \; \n";
+---
+>           print "$var=$envvars{$var} \; export $var\n";
+>         } elsif ($op eq "app") {
+>           print "$var=\$\{$var\}",
+>                 $db{"ACCUMULATE"}{$var}, "$envvars{$var} \; export $var\n";
+311c325
+<                 $db{"ACCUMULATE"}{$var}, "\$\{$var\} \;\n";
+---
+>                 $db{"ACCUMULATE"}{$var}, "\$\{$var\} \; export $var\n";
+314c328
+<         print "$var=$envvars{$var} \; \n";
+---
+>         print "$var=$envvars{$var} \; export $var\n";

@@ -1,0 +1,49 @@
+--- /software/common/adm/bin/softenv    2002-11-16 22:20:00.000000000 -0600
++++ /home/valdes/softenv  2007-01-08 16:35:00.000000000 -0600
+@@ -23,6 +23,9 @@
+ #   Alan Bailey, bailey@mcs.anl.gov
+ # 
+ # $Id: softenv-valdes-longkey.patch,v 1.1 2007/02/05 20:46:50 navarro Exp $
++#
++# slightly modified by John Valdes, valdes@mcs.anl.gov so that keys and
++# descriptions don't get truncated when printed
+ # 
+ # ===========================================================================
+ #
+@@ -52,12 +55,17 @@
+ 
+ use vars qw($defaultflag $uflag $pflag $keyname $description);
+ 
++# This format is only used for printing the description; the first half
++# of the first line containing the flags and keyname are output by a "printf"
++# so that the key field can expand as needed (ie, so that the key isn't
++# truncated).  As a result, the first line of the format starts in midline.
+ format STDOUT =
+-@@@ @<<<<<<<<<<<<<<<<<<<<<<<<<<<<< @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+-$defaultflag   $uflag  $pflag   $keyname  $description
++ ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
++$description
++~~                                   ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
++$description
+ .
+ 
+-
+ &set_globals;
+ 
+ &print_header;
+@@ -299,6 +307,15 @@
+   $uflag = "U" if ($db{"FLAGS"}{$keyname} =~ /useful/);
+   $pflag = "P" if ($db{"FLAGS"}{$keyname} =~ /power/);
+   $defaultflag = "*" if (exists $defaults{$keyname});
++  # print key using a printf so that it's not truncated if longer than 
++  # than a format field
++  printf("%1s%1s%1s %-30s",$defaultflag,$uflag,$pflag,$keyname);
++  # if key is longer than its field width, start a new line for the
++  # description, and pad the new line with spaces; should probably put
++  # the field width in a var rather than hard coding it here and in the
++  # printf above
++  print "\n", " " x 34 if (length($keyname) > 30);
++  # use a format for the description, to get multiline wrapping
+   write;
+ }
+ 

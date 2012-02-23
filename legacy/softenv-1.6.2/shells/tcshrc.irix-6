@@ -1,0 +1,109 @@
+#
+# tcsh.tcshrc
+#  The global tcshrc file.  This file sets up the basic defaults for
+#  people using tcsh.  
+#
+#  The original for this file lives in /mcs/adm/cfg/tcshrc.irix-6
+#
+# MODIFIED FOR software-5.0 beta-test
+
+# resoft function needs to be defined here, outside of the environrc
+# block, because subshells won't necessarily inherit it.
+if ( -r "$HOME"/.software-beta ) then
+	set softhome=/software/common/adm
+    alias resoft '$softhome/bin/make-sw-cache \!*; source ${HOME}/.software-cache.csh'
+else
+	alias resoft '/mcs/etc/make-sw-cache; source ${HOME}/.software-cache.csh'
+endif
+
+
+# If this shell is running as a subshell, we don't need to re-initialize
+# any environment variables.
+set WHATAMI = `/bin/whatami`
+if ($?ENVIRONRC) goto skipenviron
+
+# Set the architecture variable: $ARCH.
+# tcsh is nice enough to do this already in the $HOSTTYPE variable.
+# We could check to make sure that ARCH gets set, but we're trusting
+# our versions of tcsh.
+setenv ARCH "${HOSTTYPE}"
+
+# Set HOSTNAME to the short version of the hostname
+setenv HOSTNAME `hostname | sed 's/\..*$//'`
+
+# Set the license file pathnames
+setenv LM_LICENSE_FILE "/mcs/lib/licenses/avs.provided:/mcs/lib/licenses/misc.provided"
+
+# Set the PATH, MANPATH, and any env variables needed by the user's
+# applications, as specifed in their .software file.
+# Skip if $HOME isn't defined well.
+if ( -d "$HOME/." ) then
+ if (-r "$HOME/.software-beta" ) then
+  if (-r /software/common/adm/packages/software-5.0/etc/software-env.csh) \
+    source  /software/common/adm/packages/software-5.0/etc/software-env.csh \
+		>& /dev/null
+ else
+  if (-r /mcs/etc/software-env.csh) \
+      		source /mcs/etc/software-env.csh >& /dev/null
+ endif
+endif
+
+# Set the user's default umask (-rw-r--r-- permission on new files).
+umask 022
+
+# Set a flag to skip this next time.
+setenv ENVIRONRC 1
+
+skipenviron:
+
+if ( "$WHATAMI" == "irix-6" ) then
+ setenv LD_LIBRARYN32_PATH /usr/lib32
+ setenv LD_LIBRARYN64_PATH /usr/lib64
+#  setenv LD_LIBRARY_PATH /usr/lib:$LD_LIBRARY_PATH
+ if($?MANPATH) then
+   setenv MANPATH $MANPATH
+ else
+   setenv MANPATH $MANPATH
+ endif
+endif
+
+# This is to make the World Wide Web easier to use
+setenv WWW_HOME "http://www.mcs.anl.gov/"
+
+# Set the timezone under HP/UX.  This appears to be a purely user
+# based selection, rather than a system wide selection.
+setenv TZ CST6CDT
+
+# Set the prompt, only if presently interactive
+
+if ($?prompt) set prompt = "%m %% "
+
+if ( "$uid" == "0" ) set prompt = "%m # "
+# echo $uid
+
+# Set nice tcsh defaults
+set nostat = ( /mcs /home /afs /homes /sphome )
+set autolist
+set ignoreeof
+set history = 100
+set savehist = 100
+set savehist = 0
+set rmstar
+set noclobber
+bindkey  backward-delete-word
+unset autolist
+unset autologout
+
+if ( "$ARCH" != "ptx")  limit coredumpsize 0
+
+# Ensure that gang scheduling doesn't run on yukon, so
+# that the weightless priority really takes hold
+#
+# WKN 19980301
+
+setenv MPC_GANG OFF
+setenv MP_SUGNUMTHD 5
+setenv MP_SUGNUMTHD_MIN 2
+setenv MP_SUGNUMTHD_MAX 8
+
+

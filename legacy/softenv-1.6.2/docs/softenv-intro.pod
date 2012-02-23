@@ -1,0 +1,427 @@
+=head1 NAME 
+
+softenv-intro - An introduction to the SoftEnv system and how to use it
+
+=head1 DESCRIPTION
+
+=head2 Basic description 
+
+SoftEnv is a system designed to make it easier for users to define what
+applications they want to use, and easier for administrators to make
+applications available to users. SoftEnv has evolved from the original
+implementation called Soft designed at Northeastern University in 1994.
+It is an (almost) complete rewrite with the inclusion of many new features
+that were necessary for proper operation in the environment at Argonne
+National Laboratory's MCS division.
+
+In order to use SoftEnv, you create a file called "SOFTENVRC".  In this file,
+you describe the environment you would like using a set of keywords.
+These keywords are read by the SoftEnv when you login and expanded into
+a set of environment variables.  SoftEnv uses a database managed by the
+systems adminitrators in order to decide exactly how to build your 
+environment.
+
+There are several advantages to using SoftEnv over setting up your 
+environment yourself in your shell's startup file:
+
+=over
+
+=item * 
+
+If the environment variables are different on different kinds of systems
+(such as Solaris vs. Linux), SoftEnv automatically takes care of this.
+
+=item * 
+
+If the application you are using gets upgraded, SoftEnv will use the new
+values for the environment variables.
+
+=item * 
+
+In most cases, you can avoid all of the details of the system in order to
+get a useful environment.  The defaults are useful.  If you want to
+override the default, though, you can.
+
+=item * 
+
+SoftEnv lets you quickly change your current environment temporarily if
+you want to test a specific version of an application.
+
+=back
+
+=head2 Editing your SOFTENVRC file
+
+The SOFTENVRC file is a configuration file used to define the environment you
+want.  You should create and modify this file yourself, although a basic
+SOFTENVRC file may be provided with your account.   Use any text editor to
+make changes.
+
+The file essentially consists of list of commands to the SoftEnv system,
+with one command per line.  Empty lines are ignored, and lines beginning
+with a '#' are considered to be comments and are also ignored.
+
+The exact commands that you can put into your SOFTENVRC file are listed in
+the next section.
+
+The order of the commands is important.  The things that are listed first
+in the SOFTENVRC file are put into your environment first.
+
+It is generally recommended that you simply use this one line in your
+SOFTENVRC file:
+    @default
+
+This will give you the default environment, which includes most applications
+and all system paths, all in a reasonable order.  As you find that you need
+to modify your environment over time, then you can add further keywords to
+your file.
+
+Once you have edited your SOFTENVRC file, you will need to update your current
+environment so that it reflects the changes you just made.  You can do 
+this by running the "resoft" command.
+
+This man page should provide all the help you need to edit your SOFTENVRC, and
+you can always send email to your administrators for help.
+
+=head2 The contents of the SOFTENVRC file
+
+=over
+
+=item Keywords
+
+Keywords are the most commonly used SOFTENVRC entries.  They are identified
+by +<string>.  For example: "+matlab" says to add the Matlab application
+to your environment.  A keyword expands into a set of environment 
+variables such as PATH and MANPATH, and is typically associated with
+a single application.  You can get a list of keywords by running the
+'softenv' command.  
+
+Most keywords are already part of the default environment, so you will only
+want to add a keyword to your SOFTENVRC in two cases: if that application is
+not part of the environment you already have, or if you want to reorder
+your environment so that the application overrides some other application.
+
+=item Macros
+
+Macros are collections of applications.  Macros have the form of @<macro>,
+such as @default and @system.  A list of macros is available by running
+the 'softenv' command.  
+
+=item Comments
+
+Comments are started with a pound sign (#) and affect the rest of the line
+from where it starts.
+
+=item If statements
+
+If statements allow you to conditionally modify your environment.  They
+have this format:
+
+ if <variable> = <value> then <operation>
+
+ and
+
+  if <variable> != <value> then <operation>
+
+The <variable> portion of the clause must be an environment variable
+present at the time of evaluating the if statment (i.e. typically at
+login time).
+
+The <value> portion should be a string value.
+
+The <operation> is a SoftEnv command: either a keyword or a macro.
+
+Some useful examples are:
+
+ if ARCH=solaris-2 then +gcc-2.3
+ if HOSTNAME=gaea then +emacs-20.2
+ if ARCH != sun4 then @default
+
+For convenience when using conditional clauses in your SOFTENVRC, the soft
+system guarantees a few environment variables for you: 
+
+ARCH 
+
+This environment variable will contain a string that is unique for
+each architecture within the computing environment.
+
+HOSTNAME 
+
+This environment variable will contain a string that is the short name for
+the computer you are currently using. It does not include the domain name
+portion of the hostname. 
+
+HOST 
+
+This environment variable will contain the long version of the name of the
+host you are currently using.
+
+
+=item Environment Variables
+
+You can also simply set an environment variable from your soft file.  These
+commands have the following syntax:
+  <variable> = <value>
+  <variable> += <value>
+
+The first form is used to set a variable to a certain value, e.g.:
+
+ WWW_HOME = http://www.freshmeat.net
+
+The second form is used to append a string to the existing value, 
+which is invaluable when dealing with PATH variables:
+
+ PATH += /home/abc/bin/
+
+=item @remove <keyword>
+
+This keyword can be used to remove specific applications and macros from
+your environment.  It turns out that this is a fairly tricky operation
+because most of SoftEnv's values are computed at login time, before the
+results of conditionals are known.  As a result, the @remove keyword
+does not really "remove" the application from the created environment.
+Instead, it keeps that application from being added by subsequent parts
+of the SOFTENVRC file.
+
+Thus, the rules for using @remove include:
+
+@remove can only be used to remove keywords, not macros.
+
+@remove should be used towards the beginning of your SOFTENVRC.  It
+will remove any following references to that keyword, but will not remove
+the keyword from any preceding portions of the environment that have been
+defined.
+
+@remove applies to all architectures and hosts, regardless of 
+conditionals.
+
+The best time to use @remove is when you want to use a very specific
+version of an application, but a different version is included in the
+default system.  I.e., if gcc-2.1 were part of the default system, you
+might do:
+
+  @remove +gcc-2.1
+  @default
+  +gcc-2.5
+
+In general we recommend that you check with the administrators before 
+using the @remove command. 
+
+=back
+
+=head2 An example SOFTENVRC file
+
+Here's a simple example SOFTENVRC file:
+
+  # A simple SOFTENVRC file.
+  # Remember to type "resoft" after working on this file.
+
+  # Use the basic environment.
+  @default
+
+  # Add the current beta totalview system on Solaris boxes.
+  if ARCH = solaris-2 then +totalview-beta
+  
+  # Set up my environment variables
+  CVSROOT = /project/code/CVS
+  PATH += /home/gropp/bin
+  PATH += /home/gropp/bin/$ARCH
+  if HOST = fire then MYTESTVAR = on_fire
+
+=head2 The order of entries in a SOFTENVRC file
+
+Each line in the SOFTENVRC file causes a set of environment variables to take
+on a particular value. The effects of these variables take place in the
+order specified in the file. This means that the order of the entries in
+the SOFTENVRC file is very important. 
+
+For example, a line saying ``FOO = bar'' sets the environment variable
+FOO to bar. Let's say you have these two lines in your SOFTENVRC: 
+
+  FOO = bar
+  FOO = qux
+
+When SOFTENVRC is finished executing, FOO will be equal to ``qux''. 
+
+This is a bit trickier when it comes to setting your PATH, because your
+shell reads your PATH variable and looks for programs by reading each
+directory in your path in the order that the directories are in the PATH
+variable. Let's say you have these two lines in your SOFTENVRC: 
+
+  @default
+  PATH += ${HOME}/test/bin
+
+These two lines will set your PATH to the value of the default system 
+path, and then append the directory $HOME/test/bin to the PATH. This is
+probably what you want. 
+
+However, let's say you had these two entries in your SOFTENVRC: 
+
+  +totalview-2.3
+  @default
+
+These entries mean ``put totalview-2.3 in my path, and then put all the
+system directories in my path''. This will work great as long as you
+really want totalview-2.3. However, if totalview gets upgraded, and
+totalview-2.5 becomes a part of the system directories, you will still be
+getting totalview-2.3. This may be what you want, but it may not. 
+
+=head2 Working with your SOFTENVRC file
+
+When your SOFTENVRC file is read by soft, it creates csh and sh cache files
+that are called: 
+
+  SOFTENVRC.cache.csh
+  SOFTENVRC.cache.sh
+
+These are built directly from your SOFTENVRC file. 
+
+If there are any detectable errors in your SOFTENVRC file, a warning will be
+printed as the file is processed. 
+
+Whenever a change is made to the SOFTENVRC file, the changes can be loaded 
+into the current enviroment by running this command: 
+
+  resoft
+
+If you're using a file other than 'SOFTENVRC', you can load your enviroment by
+pointing the resoft command at that file: 
+
+  resoft SOFTENVRC-other
+
+The next time you login, you will get the environment created from your
+SOFTENVRC, not this other file. This is because your SOFTENVRC is used on each
+different system, and changing the default cache can get fairly confusing. 
+
+
+=head2 The Case against Application Keywords
+
+Thus, having the application keyword "+xemacs-19.13" will add the
+directory for xemacs-19.13 to your PATH, the manual directory to your
+MANPATH, and any environment variables specific to that version of xemacs
+to your environment.  Note - using an application keyword is usually not a
+good idea!  Most applications should be available in the default system
+paths.  Only use these if you need a very specific version of some
+application, and understand that you will get this version of that
+application, even if the default system one has been upgraded to a newer
+one or something.
+
+=head2 Power Users
+
+All that said, you may prefer to build your own environment rather than
+using the default.  Go for it and may the force be with you.
+
+In the output of "softenv", flags are included next to keywords.  These
+tell you whether or not a keyword is included as part of the default
+environment, and whether or not we recommend looking into these keys
+when building your own environment.
+
+=head2 Looking up keywords in the Database
+
+You can get all of the information related to a keyword with a single
+command. If you want to do this, execute the following:
+
+  soft-dbq <keyword>
+
+  or
+
+  soft-dbq <macro>
+
+The output of this command will show you what architectures this keyword
+has an effect, and exactly what is done to your environment.  For example,
+it will show the changes to your PATH variable and any other changes.
+
+=head2 Dynamic Environment Changes
+
+This feature of SoftEnv edits your environment on the fly with commands
+from you. 'soft add <keyword|macro>'  will add the keyword or macro to your
+environment.  This feature is a good way to try out applications that you
+may not want forever, but you want to see if you like.  'soft delete
+<keyword|macro>' will remove any instances of the keyword or macro from
+your environment.  So the following set of commands will allow you to use
+gcc-2.5:
+
+  soft add +gcc-2.5
+    # gcc-2.5 is now put into your environment
+  soft delete +gcc-2.5
+
+It is recommended that you use resoft whenever you think it is necessary.
+'resoft' is guaranteed to return your environment to your initial
+settings.
+
+=head2 Useful SoftEnv commands
+
+=over
+
+=item soft add|delete <keyword>
+
+This is dynamic keyword insertion or deletion.  It is described right
+above.
+
+=item softenv
+
+This program will print all of the keys and macros available for use in
+the SoftEnv system.  A list of the macros come first, and the keys follow.
+A paragraph at the top of the output explains how to read the output.
+
+=item resoft <file>
+
+This command will reload your environment.  So, for example, whenever you
+make changes to your SOFTENVRC, run resoft and the changes will take effect.
+If <file> is specified, then that file is used instead of SOFTENVRC.  However,
+that file needs to be in your home directory, because it writes to that
+directory.
+
+=item man softenv-intro
+
+This manual page.
+
+=back
+
+=head2 More Information
+
+More information can be found in manual pages, text files, and web pages.
+
+A few manual pages you might want to look at are the following:
+
+=over
+
+=item *
+
+softenv
+
+=item *
+
+resoft
+
+=item *
+
+soft
+
+=item *
+
+softenv-intro (this manual page)
+
+=item *
+
+softenv-admin (for the curious)
+
+=item *
+
+softenv-code  (for the very curious)
+
+=back
+
+Also, if the installation directory of SoftEnv is known to you, the doc
+directory will contain text files and html files of the documentation.
+
+SoftEnv also includes a web page of SoftEnv FAQs that should be part of
+the local web documentation.
+
+Lastly, more information can be found by emailing your administrators or
+the creaters of SoftEnv.
+
+=head2 Authors
+
+SoftEnv was created by Remy Evard, designed and developed by Remy Evard and
+Alan Bailey, and includes contributions from others.
+To contact the authors visit http://www.mcs.anl.gov/systems/software/.

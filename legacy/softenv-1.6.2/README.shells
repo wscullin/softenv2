@@ -1,0 +1,60 @@
+Shell Installation
+------------------
+
+Two things need to be added into the startup files for each shell.
+Obviously, if your site only uses one shell, then you just need to edit
+the startup file for that shell.  There is a startup hook and an aliases
+hook for each shell.  The startup hook can be added anywhere, as long as
+it is AFTER ANY OTHER ENVIRONMENT VARIABLE INITIALIZATIONS.  If you
+mess with the PATH variable after SoftEnv has run, for example, the
+environment will not be consistent.  The aliases hook can be placed
+anywhere.
+
+
+
+# csh startup hook:
+# ----------------
+if ( -e $HOME/.nosoft ) then
+  # Do nothing.
+else if ( -r !SOFTENV_HOME!/etc/softenv-load.csh ) then
+  source !SOFTENV_HOME!/etc/softenv-load.csh
+else
+  echo "Unable to load the SoftEnv system."
+endif
+
+
+# csh aliases hook:
+# ---------------
+if ( -e $HOME/.nosoft ) then
+  # Do nothing.
+else if ( -r !SOFTENV_HOME!/etc/softenv-aliases.csh ) then
+  source !SOFTENV_HOME!/etc/softenv-aliases.csh
+else
+  echo "Unable to load the SoftEnv system."
+endif
+
+
+
+
+# sh startup hook:
+# ---------------
+if [ -f $HOME/.nosoft ]; then
+  # Do nothing
+  echo
+elif [ -r !SOFTENV_HOME!/etc/softenv-load.sh ]; then
+  . !SOFTENV_HOME!/etc/softenv-load.sh
+else
+  echo "Unable to load the SoftEnv system."
+fi
+
+
+# sh aliases hook:
+# --------------
+if [ -f $HOME/.nosoft ]; then
+  # Do nothing
+  echo
+elif [ -r !SOFTENV_HOME!/etc/softenv-aliases.sh ]; then
+  . !SOFTENV_HOME!/etc/softenv-aliases.sh
+else
+  echo "Unable to load the SoftEnv system."
+fi

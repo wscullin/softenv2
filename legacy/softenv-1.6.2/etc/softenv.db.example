@@ -1,0 +1,224 @@
+#
+# softenv.db
+#
+# The main database for the SoftEnv system.      
+#   
+#   $Id: softenv.db.example,v 1.4 2007/02/05 20:46:50 navarro Exp $
+#                     
+#============================================================================
+# INSTRUCTIONS FOR EDITING THIS FILE.
+#
+#  1. Read 'man softenv-admin'.  Do it!  It describes the format of this file
+#
+#  2. Read 'man softenv-policy'.  Do it!  It describes what you should do
+#
+#  3. Read the comments above each section.
+#
+#  4. Think carefully about what you add:
+#     - New macros are probably dangerous.
+#     - It's better to add an application keyword and then put that keyword
+#       into existing macros than to add a keyword and tell people to use
+#       that keyword.
+#  5. After editing this file, check it for syntax errors by running:
+#       soft-msd -n
+#  6. Test the resulting environment by running:
+#       softcheck
+#     This will give you an environment based on your edited softenv.db.
+#     Note that you will need to make sure your changes are being used
+#     in your SOFTENVRC file.
+#  7. Then build the new database:
+#      soft-msd
+#
+#============================================================================
+#
+# Flags:
+#   power  - Handy for the "power" users, who want to build their own paths out
+#            of the various pieces.
+#   useful - A "useful" macro or keyword, but one that is not in the path.
+#   hide   - "Hide" this macro so that it's not in the 'softenv' command 
+#            output.
+#   auto   - A keyword that was found in an automated scan of the software
+#            tree, usually only found in soft-auto.db
+#============================================================================
+
+#============================================================================
+# Setting up the database defaults
+#============================================================================
+#
+# (%accumulate)
+#   This tells the SoftEnv system that these environment variables should be
+#   appended to as new values are found for them.   The alternative is to
+#   replace their value with the new value.
+#
+#   Typically this will be done for any PATH-like variable, but may be
+#   useful for other things.
+#
+#   Uniquify can be a 'y' or an 'n' (without quotes).  The 'y' means
+#   that new components to be added to a path will first be checked to
+#   see if they exist before being added.  You typically want this for
+#   PATH-like variables, so that, for example, they only have one instance
+#   of "/usr/bin" in the variable.
+#
+#   Separator can be any string, or no string.  It is the string used to
+#   separate individual components of the variable.  For PATH-like 
+#   variables, this will usually be a ':'.
+# 
+#
+(%accumulate) {
+    # varname           uniquify    separator
+    PATH                { y           :         }
+    MANPATH             { y           :         }
+    LD_LIBRARY_PATH     { y           :         }
+    LM_LICENSE_FILE     { y           :         }
+    IDL_PATH            { y           :         }
+    MATLABPATH          { y           :         }
+    TEXINPUTS           { y           :         }
+    PYTHONPATH          { y           :         }
+    SIDL_DLL_PATH       { y           :         }
+}
+
+#
+# A list of other database files to read.
+#
+# These databases are for convenience for keeping this file sane and
+# easy to manage.
+# 
+# These other databases don't cause the user's environment to be rebuilt
+# if they change; that only happens if _this_ file is touched
+#
+#(%databases) {
+#    softenv-local.db
+#}
+
+#
+# Variables to initialize at the beginning of the user's .cache file.
+#
+# These should be translated into the first lines of the .cache file:
+#
+#   PATH 
+#       Is set here so that SoftEnv can access certain binaries 
+#       that it needs to do it's thang, like sed, uname, and whatami.
+#       PATH, as set here in %initialize, is not passed on to the PATH
+#       in the users resultant environment.
+#
+#   WHATAMI 
+#       Is used to specify the location of the WHATAMI binary.
+#
+#   ARCH 
+#       Must be defined, as the sh and csh output created by soft-msc
+#       relies on it being set for switch statements.
+#
+#   PLATFORM 
+#       Is a more appropriate term then ARCH, for the string it 
+#       contains.  ARCH will be deprecated in a future release in favor
+#       of PLATFORM.
+#
+(%initialize) {
+    [] {
+        PATH        /sbin:/usr/sbin:/bin:/usr/bin
+        WHATAMI     `/bin/whatami`
+        ARCH        $WHATAMI
+        PLATFORM    $WHATAMI
+    }
+}
+
+
+################################################################################
+#
+# New users will need to add @teragrid to their SOFTENVRC files in order to 
+# establish their TeraGrid environment.
+#
+(@teragrid) {
+    {desc:  "Current Production CTSS (Common TeraGrid Software Stack)"}
+    
+    +user_paths
+    +os_paths
+}
+
+
+################################################################################
+#
+#   Default Software Stack
+#
+(@default) {
+    {desc:  "Default Software Stack"}
+    {flags: power}
+    
+    +user_paths
+    +os_paths
+    +java_provided-by-os
+
+}
+
+
+################################################################################
+#
+# user paths
+#
+(+user_paths) {
+    {desc: Standard user owned paths} 
+    {flags: power}
+    
+    [] {
+        PATH       $HOME/bin
+        MANPATH    $HOME/man
+    }
+}
+
+
+################################################################################
+#
+# os_paths
+#
+(+os_paths) {
+    {desc: "The system paths recommended by the os vendor."}
+    
+    [] {
+        PATH                /sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin:/usr/X11R6/bin
+        MANPATH             /usr/share/man:/usr/local/man:/usr/X11R6/man:/opt/gnome/man
+    }
+
+}
+
+
+################################################################################
+#
+# java
+#
+(+java) {
+    {desc: "Java Environment"
+    {flags: power}
+    
+    [] {
+        pointer +java_provided-by-os
+    }
+}
+
+(+java_provided-by-os) {
+    {desc: "Java Environment Provided by Distribution"
+    {flags: power}
+    
+    [] {
+        PATH        /usr/lib/java/bin:/usr/lib/java/jre/bin
+        JAVA_BINDIR	/usr/lib/java/bin
+        JAVA_ROOT	/usr/lib/java
+        JAVA_HOME 	/usr/lib/java
+        JRE_HOME	/usr/lib/java/jre
+        JDK_HOME    /usr/lib/java
+        SDK_HOME	/usr/lib/java
+    }
+}
+
+
+################################################################################
+
+(+debug) {
+    {flags: hidden}
+    [] {
+        command "echo Output from +debug here..."
+        command "echo PATH: $PATH"
+        command "echo PLATFORM: $PLATFORM"
+        command "echo WHATAMI: $WHATAMI"
+    }
+}
+

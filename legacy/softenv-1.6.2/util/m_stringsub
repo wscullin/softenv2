@@ -1,0 +1,115 @@
+#!/usr/local/bin/perl5
+#
+# stringsub
+# Substitutes one string for another in a set of files
+#
+# ================================================================
+#
+# Description:
+#
+#   This program substitutes one string for another string in a
+# set of files.  What to substitute is based on the first argument
+# to the program.  The rest of the arguments are files on which to 
+# do the substitution.
+#
+# ================================================================
+# 
+# Author:
+#
+#   Alan Bailey, bailey@mcs.anl.gov
+#
+# ================================================================
+# 
+
+($program = $0) =~ s:.*/::;
+
+$subfile = shift @ARGV;
+@files = @ARGV;
+
+if (! -r $subfile) {
+  die "$program: Cannot read $subfile\n";
+}
+open SUBFILE, "<$subfile" || die "$program: Cannot open $subfile";
+&parse_subfile;
+close SUBFILE;
+
+&run_through_files;
+
+exit(0);
+
+
+# -----------
+# Subroutines
+
+sub run_through_files {
+  # Takes each file, runs the substitutions on the lines of the file,
+  # and writes the file back.
+
+  my($write_it, $error);
+
+  foreach $file (@files) {
+    $write_it = $error = 0;
+
+    # Skip this file if it's not a text file.
+    next if(! -T $file);
+
+    # Suck in this file...
+    open OLDFILE, "<$file" || die "$program: Cannot open $file";
+    @lines = <OLDFILE>;
+    close OLDFILE;
+
+    # Check for matches
+    foreach (@lines) {
+      foreach $string (keys %subs) {
+	if(s/$string/$subs{$string}/g) {
+	  $write_it = 1;
+	}
+      }
+    }
+    
+    # Write it if we need to.
+    if($write_it) {
+      open NEWFILE, ">$file" || die "$program: Cannot open $file";
+      foreach (@lines) {
+	$error = !(print NEWFILE);
+      }
+      close NEWFILE;
+      if($error) {
+	print "Error writing $file\n";
+      } else {
+	print "Updated $file\n";
+      }
+    }
+
+  }
+}
+
+
+sub parse_subfile {
+  # Parses through the substitution file and puts all of the associations
+  # into a hash, %subs
+  while (<SUBFILE>) {
+    chop;
+    next if (/^\s*\#/);
+    next if (/^\s*$/);
+
+    if (/^\s*\"/) {
+      s/^\s*\"([^\"]*)\"\s+//;
+      $string = $1;
+    } else {
+      s/^\s*(\S*)\s+//;
+      $string = $1;
+    }
+
+    if (/^\"/) {
+      s/^\"(.*)\"//;
+      $substitution = $1;
+    } elsif (/^\`/) {
+      s/^\`(.*)\`//;
+      chomp($substitution = `$1`);  # execute it
+    } else {
+      $substitution = $_;
+    }
+    $subs{$string} = $substitution;
+  }
+}

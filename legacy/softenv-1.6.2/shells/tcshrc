@@ -1,0 +1,219 @@
+#
+# tcshrc:  /etc/tcsrhc typically, but also csh.cshrc and tcsh.cshrc.
+#  The global tcshrc file.  This file sets up the basic defaults for
+#  people using tcsh on _ALL_ MCS platforms.  When there are
+#  architecture-specific issues, they are handled in a case statement.
+#
+#  This shell gets read by tcsh on every invocation of tcsh, including:
+#   - login shells            if($shlvl == 1)
+#   - non-login shells        if($shlvl == 2)
+#   - rsh command scripts     if($prompt == 0)
+#   - csh scripts             if($prompt == 0)
+#
+#  It is read first, followed by /etc/csh.login if it's a login shell.
+#  Then it tries to read $HOME/.tcshrc.  If that's not there, it looks
+#  for $HOME/.cshrc.  Finally it goes for $HOME/.login if it's a login
+#  shell.
+#
+#  The job in this file is to setup the global environment and then
+#  get through as quickly and quietly as possible.
+#
+# ===========================================================================
+
+# If this shell is running as a subshell that has already been initialized
+# we don't want to re-initialize any environment variables.   The ENVIRONRC 
+# variable is set later as flag indicating that this script has been run.
+ 
+if ($?ENVIRONRC) goto skipenviron
+
+# --------------------------------------------------------------------------- 
+# Setting environment variables for interactive and non-interactive shells.
+# --------------------------------------------------------------------------- 
+
+# For historical reasons, set the architecture variable: $ARCH.
+# tcsh is nice enough to do this already in the $HOSTTYPE variable.
+# We could check to make sure that ARCH gets set, but we're trusting
+# our versions of tcsh.
+#
+setenv ARCH "${HOSTTYPE}"
+
+# However, since the ARCH is useless in some cases, we also set the
+# WHATAMI variable.
+#
+if (-x /bin/whatami) then
+  setenv WHATAMI `/bin/whatami`
+else
+  setenv WHATAMI unknown
+endif
+ 
+# Set HOSTNAME to the short version of the hostname
+#
+setenv HOSTNAME `hostname | sed 's/\..*$//'`
+
+# Set some browers to default to the MCS home page.
+#
+setenv WWW_HOME "http://www.mcs.anl.gov/"
+
+# Architectures-specific variables.
+#
+# In particular, we set up the default PATH and MANPATH.  The real place 
+# to do this is as part of the .software system lower down, but we set it 
+# first here in case something goes wrong (such as NFS breaking).
+#
+# Note - directories in /software are not included in these default
+# paths because /usr/local should collect the majority of those directories.
+#
+switch ("$WHATAMI")
+
+  case linux:
+    setenv PATH /bin:/sbin:/usr/bin/:/usr/sbin:/usr/X11R6/bin
+    setenv PATH "${PATH}:/usr/local/bin:/mcs/bin:."
+    setenv MANPATH /usr/man:/usr/X11R6/man:/usr/local/man:/mcs/man
+  breaksw
+
+  case sun4:
+    setenv PATH /usr/ucb:/bin:/usr/bin:/usr/etc:/usr/sbin:/sbin
+    setenv PATH "${PATH}:/usr/local/bin:/mcs/bin:."
+    setenv MANPATH /usr/man:/usr/local/man:/mcs/man
+    setenv OPENWINHOME /usr/openwin
+  breaksw
+
+  case solaris-2:
+    setenv PATH /bin:/usr/bin:/usr/openwin/bin:/usr/sbin
+    setenv PATH "${PATH}:/opt/SUNWspro/bin:/usr/ccs/bin"
+    setenv PATH "${PATH}:/usr/local/bin:/mcs/bin:/usr/ucb:."
+    setenv MANPATH "/usr/man:/usr/openwin/man"
+    setenv MANPATH "${MANPATH}:/usr/local/man"
+    setenv MANPATH "${MANPATH}:/opt/SUNWspro/man"
+    setenv MANPATH "${MANPATH}:/opt/SUNWits/Graphics-sw/xil/man"
+    setenv MANPATH "${MANPATH}:/opt/SUNWrtvc/man"
+    setenv MANPATH "${MANPATH}:/opt/SUNWspro/SPROutool4.2/man"
+    setenv MANPATH "${MANPATH}:/opt/SUNWspro/TW2.0/man:/opt/SUNWspro/WS4.0/man"
+    setenv MANPATH "${MANPATH}:/opt/SUNWspro/SC4.2/man"
+    setenv MANPATH "${MANPATH}:/opt/SUNWste/license_tools/man"
+    setenv OPENWINHOME /usr/openwin
+    setenv LD_LIBRARY_PATH /usr/openwin/lib
+  breaksw
+
+  case irix-6:
+    setenv PATH /usr/sbin:/usr/bsd:/sbin:/usr/bin:/etc:/usr/etc:/usr/bin/X11
+    setenv PATH "${PATH}:/usr/local/bin:/mcs/bin:."   
+    setenv MANPATH /usr/catman:/usr/man:/usr/share/catman:/usr/share/man
+    setenv MANPATH "${MANPATH}:/usr/local/man"
+    setenv LM_LICENSE_FILE "/mcs/lib/licenses/avs.provided"
+    setenv LM_LICENSE_FILE "${LM_LICENSE_FILE}:/mcs/lib/licenses/misc.provided"
+    setenv LD_LIBRARYN32_PATH /usr/lib32
+    setenv LD_LIBRARYN64_PATH /usr/lib64
+    # Ensure that gang scheduling doesn't run on yukon, so
+    # that the weightless priority really takes hold  -- WKN 19980301
+    setenv MPC_GANG OFF
+    setenv MP_SUGNUMTHD 5
+    setenv MP_SUGNUMTHD_MIN 2
+    setenv MP_SUGNUMTHD_MAX 8
+  breaksw
+
+  case irix-5:
+    setenv PATH /usr/sbin:/usr/bsd:/sbin:/usr/bin:/etc:/usr/etc:/usr/bin/X11
+    setenv PATH "${PATH}:/usr/local/bin:/mcs/bin:."   
+    setenv MANPATH /usr/catman:/usr/man:/usr/share/catman:/usr/share/man
+    setenv MANPATH "${MANPATH}:/usr/local/man"
+    setenv LM_LICENSE_FILE "/mcs/lib/licenses/avs.provided"
+    setenv LM_LICENSE_FILE "${LM_LICENSE_FILE}:/mcs/lib/licenses/misc.provided"
+  breaksw
+
+  case aix-4:
+    setenv PATH /usr/bin:/etc/:/usr/sbin:/usr/ucb:/usr/bin/X11:/sbin
+    setenv PATH "${PATH}:/usr/lpp/ssp/bin:/usr/lpp/LoadL/nfs/bin"
+    setenv PATH "${PATH}:/usr/local/bin:/mcs/bin:."   
+    setenv MANPATH /usr/man/:/usr/lpp/LoadL/nfs/man/:/usr/lpp/piofs/man/
+    setenv MANPATH "${MANPATH}:/usr/local/man"
+  breaksw
+
+  default:
+    setenv PATH /bin:/sbin:/usr/bin/:/usr/sbin:/usr/local/bin:/mcs/bin:.
+    setenv MANPATH /usr/man:/usr/local/man:/mcs/man
+  breaksw
+
+endsw
+
+
+# Now we invoke the .software system, unless they have a .nosoft file.
+# At the present time, we are supporting software systems using both
+# SOFTENVRC and .software.  SOFTENVRC is the newer one.  Look for that first.
+#
+if ( -e $HOME/.nosoft ) then
+  # Do nothing.
+else if ( -r $HOME/SOFTENVRC ) then
+  if ( -r /software/common/adm/etc/softenv-load.csh ) then
+     source /software/common/adm/etc/softenv-load.csh
+  else
+     echo "Unable to load the SoftEnv system."
+  endif
+else if ( -r $HOME/.software-beta ) then
+  if ( -r /software/common/adm/packages/software-5.0/etc/software-env.csh) then
+     source  /software/common/adm/packages/software-5.0/etc/software-env.csh
+  else
+     echo "Unable to load the beta software system."
+  endif
+else if ( -r $HOME/.software ) then
+  if (-r /mcs/etc/software-env.csh) \
+    source /mcs/etc/software-env.csh >& /dev/null
+  else 
+    echo "Unable to load the original software system."
+  endif
+endif
+ 
+# Set a flag to skip this next time.
+setenv ENVIRONRC
+ 
+skipenviron:
+
+# ---------------------------------------------------------------------------
+# Setting shell variables for interactive and non-interactive shells.
+# We can't skip these on sub-shells because they don't get inherited.
+# ---------------------------------------------------------------------------
+
+# Set the user's default umask (-rw-r--r-- permission on new files).
+umask 022
+
+# ---------------------------------------------------------------------------
+# Set shell variables for interactive shells
+# ---------------------------------------------------------------------------
+if($?prompt) then
+
+  # Set the prompt
+  set prompt = "%m %# "
+ 
+  # Set nice tcsh defaults
+  set nostat = ( /mcs /home /afs /homes /sphome /ccsthome /sghome )
+  set autolist
+  set ignoreeof
+  set history = 100
+  set savehist = 100
+  set savehist = 0
+  set rmstar
+  set noclobber
+  bindkey ^W backward-delete-word
+  unset autolist
+  unset autologout
+
+  # Set the resoft alias here, outside of the environrc area, because
+  # subshells won't inherit it if it's set up where the software system
+  # is invoked.
+
+  if ( -e $HOME/.nosoft ) then
+    # Do nothing.
+  else if ( -r $HOME/SOFTENVRC ) then
+    alias resoft '/software/common/adm/bin/soft-msc \!*; source ${HOME}/SOFTENVRC.cache.csh'
+  else if ( -r $HOME/.software-beta ) then
+    alias resoft '/software/common/adm/bin/make-sw-cache \!*; source ${HOME}/.software-cache.csh'
+  else if ( -r $HOME/.software ) then
+    alias resoft '/mcs/etc/make-sw-cache; source ${HOME}/.software-cache.csh'
+  endif
+
+endif
+
+
+# ===========================================================================
+# EOF
+# ===========================================================================

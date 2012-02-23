@@ -1,0 +1,48 @@
+=head1 NAME
+
+soft-menu-select - does the selecting part of the softmenu function
+
+=head1 DESCRIPTION
+
+soft-menu-select prints out a menu based on the group given by the
+user.  The selection from this menu is then passed to soft-menu-change
+which puts that key into the environment.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft-menu-select. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+soft-menu-select [C<-t> C<-d>] csh|sh group
+
+=over
+
+=item -t
+
+Use the test database
+
+=item -d
+
+This option turns on debugging
+
+=item csh|sh
+
+This specifies the shell format to output, and must be the first argument
+on the command line (excepting the options)
+
+=item group
+
+The group that you want to pick a keyword from
+
+=item -u -h --help
+
+Helpful messages
+
+=item -v --version
+
+Version
+
+=back

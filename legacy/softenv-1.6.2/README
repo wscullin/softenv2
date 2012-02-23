@@ -1,0 +1,56 @@
+
+    $Id: README,v 1.6 2003/08/29 02:44:27 finley Exp $
+
+"SoftEnv" is part of Msys, the MCS Systems Administration Toolkit.
+For more information, see http://www.mcs.anl.gov/systems/software. 
+
+Copyright (c) University of Chicago 1999.  
+See the COPYRIGHT file in the distribution for details on the copyright.
+
+Overview
+--------
+SoftEnv is designed to automatically generate environment variables for the
+user's shells based on how software packages are installed in the larger
+system.  It does this by reading the user's "SOFTENVRC" file and then creating
+shell scripts that are automatically read by the user's startup shells.
+
+History and Current Version
+---------------------------
+SoftEnv was originally written at Northeastern University by Robert Leslie
+and Remy Evard.  At the time, it was called "Soft", and sometimes
+"Software".  It was later installed at Argonne National Lab, where it
+outscaled the original design plans and became very unwieldy.  Joe Bester
+rewrote it as version to 5.01, added some much-needed features, and
+partially installed it, using the ".software-beta" file on some of the
+archictures.
+
+Remy wrote version 5.1 in an attempt to get it installed on every system in
+the same way at Argonne.  As a side effect, he essentially rewrote all the
+code and developed some new base algorithms, and also wanted a project name
+that was a bit more distinctive than "Soft", so renamed the whole mess
+to "SoftEnv", and restarted version numbers at 0.9.
+
+Sometime in the process, Remy realized that he had barely any time to work
+on coding.  At 0.9.1, he gave the work to Alan Bailey, a student working
+at Argonne.  Alan finished up the work that Remy had left off, and
+developed SoftEnv 1.2.0, which is now installed everywhere at Argonne.
+SoftEnv 1.3.0 was developed after that.
+
+Docs
+----
+See the docs/ directory of the distribution for further documentation on
+the makings of the system.  Specifically, softenv-intro and softenv-admin
+will be very helpful if you are just starting out with this utility.
+
+Installation
+------------
+See INSTALL file for installation instructions.
+
+Support
+-------
+The MCS Systems Group is a team of systems administrators, not software
+developers.  Our first responsibility is to support the MCS user community,
+and code release and support is accomplished only as we can find time,
+which is rare.  This program has no warranty, and we can make no promises
+as to whether or not it will work.  You assume all risk when using this
+code.

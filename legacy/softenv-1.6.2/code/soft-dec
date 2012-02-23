@@ -1,0 +1,506 @@
+#!!PERL_PATH!
+#
+# soft-dec
+# The SoftEnv "dynamic environment change" program
+#
+# This is part of Msys, the MCS Systems Administration Toolkit
+# For more information, see http://www.mcs.anl.gov/systems/software/ .
+#
+# Copyright (c) University of Chicago 1999.
+# See the COPYRIGHT file in the distribution for details on the copyright.
+#
+# ===========================================================================
+#
+# Description:
+#  soft-dec is used to implement the 'soft [add,delete,append]'
+#  functions.  The 'soft' alias calls this program correctly, this gets
+#  the correct environment variables set up, and outputs them, and it all
+#  works correctly
+#
+# ===========================================================================
+#
+# Authors and ID String:
+#
+#   Alan Bailey, bailey@mcs.anl.gov
+#
+# $Id: soft-dec,v 1.26 2007/02/05 20:46:49 navarro Exp $
+#
+# ===========================================================================
+#
+#  soft-dec [-d -t] csh|sh add|delete|append keyword
+#
+#   csh|sh           : the shell syntax to output
+#   add|delete|append: operation, either add, delete, or append
+#   keyword          : keyword or macro to add, delete, or append
+#   -d               : turn on debugging
+#   -t               : use the test database
+#   -u -h --help     : helpful stuff
+#   -v --version     : version
+#
+# ===========================================================================
+#
+# Exit codes:
+#   0  Successful completion.
+#   1  Error
+#
+# ===========================================================================
+
+use Getopt::Std;
+
+use strict;
+
+use vars qw($keyword $op $shell $arch %db $program $debug %envvars);
+use vars qw($database $test_database $arch_id_program);
+use vars qw($package_name $version %supported);
+
+&set_globals;
+
+&enact_environment_changes();
+
+exit(0);
+
+# -----------
+# Subroutines
+# -----------
+
+sub set_globals {
+
+  # read the site defaults
+  push(@INC, 'SOFTENV_ETC_DIR');
+  require 'softenv.config.pl';
+
+  ($program = $0) =~ s:.*/::;   # here's the real name
+  $program = "soft";            # we just want 'soft'
+
+  %db = &read_database($database);
+
+  # Set global variables and parse the commandline
+  &parse_commandline;
+
+  chomp ($arch = `$arch_id_program`);
+  $arch = "default" if (! $supported{$arch});
+  print "The arch is $arch...\n" if $debug;
+
+}
+
+
+sub parse_commandline {
+  # Parse the commandline
+  # First checks for -- options, then runs getopt
+  # and finds the - options.  After that, it gets the
+  # actual parameters csh|sh, add|del|app, and keyword
+
+  use vars qw($opt_d $opt_t $opt_h $opt_u $opt_v);
+
+  if ($ARGV[0] eq "--version") {
+    &version;
+    exit(0);
+  }
+  if ($ARGV[0] eq "--help") {
+    &usage;
+    exit(0);
+  }
+
+  getopt('');
+  $debug = 1 if ($opt_d);
+  $database = $test_database if ($opt_t);
+
+  if (($opt_h) or ($opt_u)) {
+    &usage();
+    exit(0);
+  }
+  if ($opt_v) {
+    &version();
+    exit(0);
+  }
+
+  if ($#ARGV > 2) {
+    print "echo \"$program: Bad command line arguments\" \; \n";
+    &usage;
+    exit(1);
+  }
+  if ($ARGV[0] eq "csh") {
+    $shell = "csh";
+  } elsif ($ARGV[0] eq "sh") {
+    $shell = "sh";
+  } else {
+    print "echo \"$program: Bad command line arguments\" \; \n";
+    &usage;
+    exit(1);
+  }
+  print "Outputting $shell code...\n" if $debug;
+
+  if ($ARGV[1] eq "add") {
+    $op = "add";
+  } elsif ($ARGV[1] eq "delete") {
+    $op = "del";
+  } elsif ($ARGV[1] eq "append") {
+    $op = "app";
+  } else {
+    print "echo \"$program: Bad command line arguments\" \; \n";
+    &usage;
+    exit(1);
+  }
+
+  if (defined $ARGV[2]) {
+    $keyword = $ARGV[2];
+  } else {
+    print "echo \"$program: Bad command line arguments\" \; \n";
+    &usage;
+    exit(1);
+  }
+
+  if ((! $db{"ENV"}{$keyword}) and (! $db{"MACRO"}{$keyword})) {
+    print "echo \"$program: Unknown keyword $keyword\" \; \n";
+    &usage;
+    exit(1);
+  }
+  print "performing $op for the keyword $keyword\n" if $debug;
+}
+
+
+sub enact_environment_changes {
+
+  my($macro, @keywords, @keywords_test);
+  my(@keyword_test);
+
+  if ($keyword =~ /^\@/) {
+    $macro = $keyword;
+
+    if (($db{"MACRO_ARCHES"}{$macro}.' ') !~ /$arch /) {
+      print "echo \"$program: No changes associated with macro $macro\" \; \n";
+      return;
+    } else {
+      @keywords = &resolve_macro($macro);
+    }
+  } else {
+    @keywords = ($keyword);
+  }
+
+  if ($op eq "add") {
+    print "Outputting shell lines for addition\n" if $debug;
+  } elsif ($op eq "del") {
+    print "Outputting shell lines for deletion\n" if $debug;
+  } elsif ($op eq "app") {
+    print "Outputting shell lines for appending\n" if $debug;
+  }
+
+  foreach $keyword (@keywords) {
+    # reset the envvars for this new keyword.
+    %envvars = ();
+
+    # get the envvars
+    &find_vars_to_set_for_keyword();
+
+    # Do either the addition, deletion, or appending
+    if ($op eq "add") {
+      &output_addition();
+    } elsif ($op eq "del") {
+      &output_subtraction();
+    } elsif ($op eq "app") {
+      &output_addition();
+    }
+  }
+
+  if ($op eq "add") {
+    print "Done outputting addition lines\n" if $debug;
+  } elsif ($op eq "del") {
+    print "Done outputting deletion lines\n" if $debug;
+  } elsif ($op eq "app") {
+    print "Done outputting appending lines\n" if $debug;
+  }
+}
+
+
+sub find_vars_to_set_for_keyword {
+  # Looks in the %db hash to get the variables and values involved in
+  # this operation.
+  
+  my($e, $found_econ, $var);
+
+  if (! $db{"ENV"}{$keyword}{$arch}) {
+    print "echo \"$program: No changes associated with keyword $keyword\" \; \n";
+    return;
+  }
+
+  $found_econ = 0;
+
+  foreach $e (split / /, $db{"ENV"}{$keyword}{$arch}{"ECONS"}{"ORDER"}) {
+    if (&econ_is_true($e)) {
+      print "Found the following variables:\n" if $debug;
+      foreach $var (keys %{ $db{"ENV"}{$keyword}{$arch}{$e} }) {
+        print "$var -> ", $db{"ENV"}{$keyword}{$arch}{$e}{$var}, "\n" if $debug;
+        $envvars{$var} = $db{"ENV"}{$keyword}{$arch}{$e}{$var};
+      }
+      $found_econ = 1;
+    }
+  }
+  if (! $found_econ) {
+    print "Found the following variables:\n" if $debug;
+    foreach $var (keys %{ $db{"ENV"}{$keyword}{$arch}{"NO-ECON"} }) {
+      print "$var -> ", $db{"ENV"}{$keyword}{$arch}{"NO-ECON"}{$var}, "\n" if $debug;
+      $envvars{$var} = $db{"ENV"}{$keyword}{$arch}{"NO-ECON"}{$var};
+    }
+  }
+
+}
+
+
+sub econ_is_true {
+
+  my($econ, $lhs, $rhs) = @_;
+
+  print "testing $econ...\n" if $debug;
+
+  if ($econ =~ /^(.*)\!\=(.*)$/) {
+    $lhs = $1;
+    $rhs = $2;
+    if ($ENV{$lhs} ne $rhs) {
+      print "Yes, $lhs != $rhs\n" if $debug;
+      return 1;
+    } else {
+      print "No, $lhs = $rhs\n" if $debug;
+      return 0;
+    }
+  } elsif ($econ =~ /^(.*)\=(.*)$/) {
+    $lhs = $1;
+    $rhs = $2;
+    if ($ENV{$lhs} eq $rhs) {
+      print "Yes, $lhs = $rhs\n" if $debug;
+      return 1;
+    } else {
+      print "No, $lhs != $rhs\n" if $debug;
+      return 0;
+    }
+  }
+}
+
+
+sub output_addition {
+  # Output shell code (either csh or sh) lines for the keyword
+  # Basically a bunch of setenv lines, it checks for the accumulate
+  # indicator, and also if the variable is already set to something
+
+  my($var, @var_order);
+
+  if ($db{"FLAGS"}{$keyword} =~ /ordered/) {
+    @var_order = split(/ /, $envvars{"SOFT_VAR_ORDER"});
+  } else {
+    @var_order = sort keys %envvars;
+  }
+
+  foreach $var (@var_order) {
+    next if ($var eq "SOFT_VAR_ORDER");
+    if ($shell eq "csh") {
+      if ($var =~ /^command(\d+)/) {
+        print "$envvars{$var} \; \n";
+      } elsif ($var =~ /^source(\d+)/) {
+        print "source $envvars{$var}.csh \; \n";
+      } elsif ($db{"ACCUMULATE"}{$var}) {
+        if ($ENV{$var} eq "") {
+          print "setenv $var $envvars{$var} \; \n";
+        } elsif ($op eq "app") {
+          print "setenv $var \$\{$var\}",
+                $db{"ACCUMULATE"}{$var}, "$envvars{$var} \;\n";
+        } else {
+          print "setenv $var $envvars{$var}", 
+                $db{"ACCUMULATE"}{$var}, "\$\{$var\} \;\n";
+        }
+      } else {
+        print "setenv $var $envvars{$var} \; \n";
+      }
+    } else {
+      if ($var =~ /^command(\d+)/) {
+        print "$envvars{$var} \; \n";
+      } elsif ($var =~ /^source(\d+)/) {
+        print ". $envvars{$var}.sh \; \n";
+      } elsif ($db{"ACCUMULATE"}{$var}) {
+        if ($ENV{$var} eq "") {
+          print "$var=$envvars{$var} \; export $var\n";
+        } elsif ($op eq "app") {
+          print "$var=\$\{$var\}",
+                $db{"ACCUMULATE"}{$var}, "$envvars{$var} \; export $var\n";
+        } else {
+          print "$var=$envvars{$var}",
+                $db{"ACCUMULATE"}{$var}, "\$\{$var\} \; export $var\n";
+        }
+      } else {
+        print "$var=$envvars{$var} \; export $var\n";
+      }
+    }
+  }
+}
+
+
+sub output_subtraction {
+  # Output shell code (either csh or sh) lines for the keyword
+  # Basically a bunch of unsetenv lines, it checks for the accumulate
+  # indicator, and also if the variable is already set to something.
+  # For unsetting PATH-like variables, a sed trick is used.  First the
+  # variable is surrounded with :'s, to make everything equivalent, then
+  # the value is found and deleted.
+
+  my($var, @var_order);
+
+  # Do the deletion in backwards order from the order specified
+  if ($db{"FLAGS"}{$keyword} =~ /ordered/) {
+    @var_order = reverse(split(/ /, $envvars{"SOFT_VAR_ORDER"}));
+  } else {
+    @var_order = sort keys %envvars;
+  }
+
+  foreach $var (@var_order) {
+    next if ($var eq "SOFT_VAR_ORDER");
+    if ($shell eq "csh") {
+      if ($var =~ /^command(\d+)/) {
+        # nothing, no way to remove this
+      } elsif ($var =~ /^source(\d+)/) {
+        # nothing, no way to remove this
+      } elsif ($db{"ACCUMULATE"}{$var}) {
+        if ($ENV{$var} eq "") {
+          # print "setenv $var $envvars{$var} \; \n";
+        } else {
+          # print "setenv $var $envvars{$var}$accumulate{$var}\$\{$var\} \;\n";
+          print "setenv SOFT_REMOVE $envvars{$var} \; \n";
+          print "setenv $var \`echo \$\{$var\} | sed -e \'s+.\*+\:\&\:+g\' -e \"s#\\\$\{SOFT_REMOVE\}#@@@#g\" | sed -e \'s+\:@@@\[\:@@@\]\*\:+\:+g\' | sed -e \'s+\^\:++\' -e \'s+\:\$++\' -e \"s#@@@#\$\{SOFT_REMOVE\}#g\" \` \; \n";
+          print "unsetenv SOFT_REMOVE \; \n";
+        }
+      } else {
+        # print "setenv $var $envvars{$var} \; \n";
+        print "unsetenv $var \; \n";
+      }
+    } else {
+      if ($var =~ /^command(\d+)/) {
+        # nothing, no way to remove this
+      } elsif ($var =~ /^source(\d+)/) {
+        # nothing, no way to remove this
+      } elsif ($db{"ACCUMULATE"}{$var}) {
+        if ($ENV{$var} eq "") { 
+          # print "$var=$envvars{$var} \; \n";
+        } else {
+          # print "$var=$envvars{$var}$accumulate{$var}\$\{$var\} \;\n";
+          print "SOFT_REMOVE=$envvars{$var} \; \n";
+          print "$var=\`echo \$\{$var\} | sed -e \'s+.\*+\:\&\:+g\' -e \"s#\\\$\{SOFT_REMOVE\}#@@@#g\" | sed -e \'s+\:@@@\[\:@@@\]\*\:+\:+g\' | sed -e \'s+\^\:++\' -e \'s+\:\$++\' -e \"s#@@@#\$\{SOFT_REMOVE\}#g\" \` \; \n";
+          print "unset SOFT_REMOVE \; \n";
+        }
+      } else {
+        # print "$var=$envvars{$var} \; \n";
+        print "unset $var \; \n";
+      }
+    }
+  }
+}
+
+
+
+sub version {
+  # Version 
+print <<"EOF"; 
+
+$program is part of $package_name version $version
+
+EOF
+}
+
+sub usage {
+  # Usage
+print <<"EOF";
+echo "";
+echo "$program is part of $package_name version $version ";
+echo "";
+echo "  Usage:";
+echo "    $program add|delete keyword";
+echo "     add|delete     : operation";
+echo "     keyword        : keyword to add or delete";
+echo "";
+echo "";
+echo "  Purpose:";
+echo "     $program is part of the $package_name system.  It dynamically adds";
+echo "     or deletes a key from your environment. ";
+EOF
+}
+
+sub read_database {
+  # Read the software database, put it in a hash, return the hash.
+  # Instead of dropping P, M, E directly in, parse them into subhashes.
+  #
+  # Original routine in soft-msc
+  #
+  my($file) = @_;
+  my($x, $key, $val, %db);   
+     
+  print("Reading db file $file\n") if($debug);
+     
+  open (DB, $file) || die "$program: Unable to open $file\n";
+  while(<DB>) {
+    $x = chomp;
+    if(! $x eq "\n") { $_ .= $x; }
+    ($key,$val)=split(/->/, $_, 2);
+   
+    if($key =~ s/^MACRO\://) {
+      $db{MACRO}{$key}=$val;
+    }
+    if($key =~ s/^MACRO_ARCHES\://) {
+      $db{MACRO_ARCHES}{$key}=$val;
+    }
+    if($key =~ s/^DESC\://) {
+      $db{DESC}{$key}=$val;
+    }
+    if($key =~ s/^ACCUMULATE\://) {
+      $db{ACCUMULATE}{$key}=$val;
+    }
+    if($key =~ s/^UNIQUE\://) {
+      $db{UNIQUE}{$key}=1;
+    }
+    if($key =~ s/^FLAGS\://) {
+      $db{FLAGS}{$key}=$val;
+    }
+    if($key =~ s/^GROUP\://) {
+      $db{GROUP}{$key}=$val;
+    }
+    if($key =~ /^INITIALIZE\:(.+):(\d+\:(.+)$)/) {
+      $db{INITIALIZE}{$1}{$2}=$val;
+    }
+    if($key =~ /^ENV:(.+):(.+):(.+):(.+)$/) {
+      $db{ENV}{$1}{$2}{$3}{$4}=&bracify($val);
+    }
+  }  
+  close DB;
+  %db;
+}
+
+
+sub resolve_macro {
+  # Resolve macros (recursively)
+  #
+  my(@keywords) = @_;
+  my($i);
+
+  for ($i = 0; $i < @keywords; $i++) {
+    if($keywords[$i] =~ /^\@/) {
+      splice(@keywords, $i, 1, 
+	     &resolve_macro(split(/ /, $db{"MACRO"}{$keywords[$i]})));
+    }
+  }
+  return @keywords;
+}
+
+
+sub bracify {
+  # Take some string, like /home/foo/$ARCH and change it into
+  # /home/foo/${ARCH}.  This is done because, otherwise, shells can
+  # get fairly picky about what you append to such a string.
+  #
+  # We assume that only letters, numbers, and _ constitute variable
+  # names.
+  #
+  # Original routine in soft-msc
+  #
+  my($s) = @_;
+
+  while ($s =~ /\$[A-Za-z0-9_]+/) {
+    $s =~ s/\$([A-Za-z0-9_]+)/\$\{$1\}/;
+  }
+  $s;
+}
+

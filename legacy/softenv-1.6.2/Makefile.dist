@@ -1,0 +1,104 @@
+# 
+# This Makefile is used to build and install SoftEnv.
+#
+
+PREFIX=/software/common/adm/packages/softenv-x.y.z
+PERLPATH=/usr/local/bin/perl
+
+VERSION=x.y.z
+
+build:
+	perl -pi -e 's:!SOFTENV_HOME!:$(PREFIX):g;		\
+		s:!PERL_PATH!:$(PERLPATH):g'			\
+		etc/softenv.config.pl				\
+		etc/softenv-load.csh				\
+		etc/softenv-load.sh				\
+		etc/softenv-aliases.csh				\
+		etc/softenv-aliases.sh				\
+		code/soft-msd					\
+		code/soft-msc					\
+		code/soft-mad					\
+		code/soft-mwl					\
+		code/soft-dec					\
+		code/soft-dbq					\
+		code/soft-menu-change				\
+		code/soft-menu-select				\
+		code/softenv					\
+		SHELLS
+
+clean:
+	perl -pi -e 's:$(PREFIX):!SOFTENV_HOME!:g;		\
+		s:$(PERLPATH):!PERL_PATH!:g'			\
+		etc/softenv.config.pl				\
+		etc/softenv-load.csh				\
+		etc/softenv-load.sh				\
+		etc/softenv-aliases.csh				\
+		etc/softenv-aliases.sh				\
+		code/soft-msd					\
+		code/soft-msc					\
+		code/soft-mad					\
+		code/soft-mwl					\
+		code/soft-dec					\
+		code/soft-dbq					\
+		code/soft-menu-change				\
+		code/soft-menu-select				\
+		code/softenv					\
+		SHELLS
+
+install:
+	@echo "Making directories..."
+	@if [ ! -d $(PREFIX) ] ; then mkdir $(PREFIX) ; fi
+	@if [ ! -d $(PREFIX)/bin ] ; then mkdir $(PREFIX)/bin ; fi
+	@if [ ! -d $(PREFIX)/etc ] ; then mkdir $(PREFIX)/etc ; fi
+	@if [ ! -d $(PREFIX)/man ] ; then mkdir $(PREFIX)/man ; fi
+	@if [ ! -d $(PREFIX)/man/man1 ] ; then mkdir $(PREFIX)/man/man1 ; fi
+	@if [ ! -d $(PREFIX)/docs ] ; then mkdir $(PREFIX)/docs ; fi
+	@if [ ! -d $(PREFIX)/docs/html ] ; then mkdir $(PREFIX)/docs/html ; fi
+	@if [ ! -d $(PREFIX)/docs/txt ] ; then mkdir $(PREFIX)/docs/txt ; fi
+	chmod 755 $(PREFIX)
+	chmod 755 $(PREFIX)/bin
+	chmod 775 $(PREFIX)/etc
+	chmod 755 $(PREFIX)/man
+	chmod 755 $(PREFIX)/man/man1
+	chmod 755 $(PREFIX)/docs
+	chmod 755 $(PREFIX)/docs/html
+	chmod 755 $(PREFIX)/docs/txt
+	chmod -R g+s $(PREFIX)
+	@echo "Copying files..."
+	cp code/soft-mwl $(PREFIX)/bin/
+	cp code/soft-msd $(PREFIX)/bin/
+	cp code/soft-msc $(PREFIX)/bin/
+	cp code/soft-mad $(PREFIX)/bin/
+	cp code/soft-dec $(PREFIX)/bin/
+	cp code/soft-menu-change $(PREFIX)/bin/
+	cp code/soft-menu-select $(PREFIX)/bin/
+	cp code/soft-dbq $(PREFIX)/bin/
+	cp code/softenv $(PREFIX)/bin/
+	chmod 775 $(PREFIX)/bin/*
+	chmod 774 $(PREFIX)/bin/soft-mad
+	chmod 774 $(PREFIX)/bin/soft-mwl
+	chmod 774 $(PREFIX)/bin/soft-msd
+	cp etc/soft-auto.db $(PREFIX)/etc/
+	cp etc/soft.db $(PREFIX)/etc/
+	cp etc/soft.dbc $(PREFIX)/etc/
+	cp etc/soft.test.dbc $(PREFIX)/etc/
+	cp etc/softenv-load.csh $(PREFIX)/etc/
+	cp etc/softenv-load.sh $(PREFIX)/etc/
+	cp etc/softenv-aliases.csh $(PREFIX)/etc/
+	cp etc/softenv-aliases.sh $(PREFIX)/etc/
+	cp etc/softenv.config.pl $(PREFIX)/etc/
+	chmod 444 $(PREFIX)/etc/soft-auto.db
+	chmod 664 $(PREFIX)/etc/soft.db
+	chmod 444 $(PREFIX)/etc/soft.dbc
+	chmod 444 $(PREFIX)/etc/soft.test.dbc
+	chmod 664 $(PREFIX)/etc/softenv-load.csh
+	chmod 664 $(PREFIX)/etc/softenv-load.sh
+	chmod 664 $(PREFIX)/etc/softenv-aliases.csh
+	chmod 664 $(PREFIX)/etc/softenv-aliases.sh
+	chmod 664 $(PREFIX)/etc/softenv.config.pl
+	cp docs/man/* $(PREFIX)/man/man1/
+	cp docs/html/* $(PREFIX)/docs/html/
+	cp docs/txt/* $(PREFIX)/docs/txt/
+	chmod 664 $(PREFIX)/man/man1/*
+	chmod 664 $(PREFIX)/docs/html/*
+	chmod 664 $(PREFIX)/docs/txt/*

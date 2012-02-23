@@ -1,0 +1,286 @@
+#!!PERL_PATH!
+#
+# soft-menu-select
+# The SoftEnv "software menu make selections" program
+#
+# This is part of Msys, the MCS Systems Administration Toolkit
+# For more information, see http://www.mcs.anl.gov/systems/software/ .
+#
+# Copyright (c) University of Chicago 1999.
+# See the COPYRIGHT file in the distribution for details on the copyright.
+#
+# ===========================================================================
+#
+# Description:
+#  soft-menu-select prints out a menu based on the group given by the
+#  user.  The selection from this menu is then passed to soft-menu-change
+#  which puts that key into the environment.
+#
+# ===========================================================================
+#
+# Authors and ID String:
+#
+#   Alan Bailey, bailey@mcs.anl.gov
+#
+# $Id: soft-menu-select,v 1.7 2003/08/28 03:20:41 finley Exp $
+#
+# ===========================================================================
+#
+#  soft-menu-select [-t -d] csh|sh group selection
+#
+#   csh|sh           : the shell syntax to output
+#   group            : the group you want to display
+#   -d               : turn on debugging
+#   -t               : use the test database
+#   -u -h --help     : helpful stuff
+#   -v --version     : version
+#
+# ===========================================================================
+#
+# Exit codes:
+#   0   Tell soft-menu-change to do nothing
+#   >1  Add software
+#
+# ===========================================================================
+
+use Getopt::Std;
+
+use strict;
+
+use vars qw($debug $arch %db $program %envvars $shell);
+use vars qw($database $test_database $arch_id_program);
+use vars qw($package_name $version %supported);
+use vars qw($group $selection);
+
+&set_globals;
+
+&display_menu;
+
+exit(&get_selection);
+
+
+# -----------
+# Subroutines
+# -----------
+
+sub set_globals {
+
+  # read the site defaults
+  push(@INC, 'SOFTENV_ETC_DIR');
+  require 'softenv.config.pl';
+
+  ($program = $0) =~ s:.*/::;   # here's the real name
+  $program = "softmenu";            # we just want 'softmenu'
+
+  chomp ($arch = `$arch_id_program`);
+  $arch = "default" if (! $supported{$arch});
+  %db = &read_database($database);
+
+  &parse_commandline;
+  print "The arch is $arch\n" if $debug;
+
+}
+
+
+sub parse_commandline {
+  # Parse the commandline
+  # First checks for -- options, then runs getopt
+  # and finds the - options.  After that, it gets the
+  # actual parameters csh|sh, add|del, and keyword
+
+  use vars qw($opt_d $opt_t $opt_h $opt_u $opt_v);
+
+  my($exists) = "no";
+  my($key);
+
+  if ($ARGV[0] eq "--version") {
+    &version;
+    exit(0);
+  }
+  if ($ARGV[0] eq "--help") {
+    &usage;
+    exit(0);
+  }
+
+  getopt('');
+  $database = $test_database if ($opt_t);
+  $debug = 1 if ($opt_d);
+
+  if (($opt_h) or ($opt_u)) {
+    &usage();
+    exit(0);
+  }
+  if ($opt_v) {
+    &version();
+    exit(0);
+  }
+
+  if ($#ARGV != 1) {
+    print "$program: Bad command line arguments\n";
+    &usage;
+    exit(0);
+  }
+
+  if ($ARGV[0] eq "csh") {
+    $shell = "csh";
+  } elsif ($ARGV[0] eq "sh") {
+    $shell = "sh";
+  } else {
+    print "$program: Bad command line arguments\n";
+    &usage;
+    exit(0);
+  }
+  print "The shell is $shell\n" if $debug;
+  if ($ARGV[1]) {
+    $group = $ARGV[1];
+  } else {
+    print "$program: Bad command line arguments\n";
+    &usage;
+    exit(0);
+  }
+  foreach $key (sort keys %{ $db{GROUP} }) {
+    next if ($db{GROUP}{$key} !~ /$group/);
+    next if (! $db{ENV}{$key}{$arch});
+    $exists = "ok";
+  }
+  if ($exists eq "no") {
+    print "$program: group $group does not exist on this architecture\n";
+    &usage;
+    exit(0);
+  }
+  print "The group is $group\n" if $debug;
+
+}
+
+sub display_menu {
+  my($key, $count);
+
+  print "\nPlease select the version of software that you wish to use:\n";
+  print "\n";
+  $count = 0;  
+  foreach $key (sort keys %{ $db{GROUP} }) {
+    next if ($db{GROUP}{$key} !~ /$group/);
+    next if (! $db{ENV}{$key}{$arch});
+    $count++;
+    print "Displaying key $key in the menu\n" if $debug;
+    print "$count) $db{DESC}{$key}\n";
+  }
+}
+
+sub get_selection {
+  my($selection, $key, $count);
+  my($exists) = "no";
+
+  print "\nYour choice? ";
+  $selection = getc;
+
+  foreach $key (sort keys %{ $db{GROUP} }) {
+    next if ($db{GROUP}{$key} !~ /$group/);
+    next if (! $db{ENV}{$key}{$arch});
+    $count++;
+    if ($selection eq $count) {
+      $exists = "ok";
+    }
+  }
+  if ($exists eq "no") {
+    print "$program: Unknown selection $selection\n";
+    exit(0);
+  }
+  print "The user entered $selection\n" if $debug;
+
+  return $selection;
+}
+
+
+sub version {
+  # Version
+print <<"EOF";
+
+$program is part of $package_name version $version
+
+EOF
+}
+
+sub usage {
+  # Usage
+print <<"EOF";
+
+$program is part of $package_name version $version
+
+  Usage:
+    $program group
+     group        : keyword or macro to add or delete
+
+  Purpose:
+     $program is part of the $package_name system.  It shows a menu
+     and lets you choose a key to dynamically add.
+EOF
+}
+
+sub read_database {
+  # Read the software database, put it in a hash, return the hash.
+  # Instead of dropping P, M, E directly in, parse them into subhashes.
+  #
+  # Original routine in soft-msc
+  #
+  my($file) = @_;
+  my($x, $key, $val, %db);   
+     
+     
+  open (DB, $file) || die "$program: Unable to open $file\n";
+  while(<DB>) {
+    $x = chomp;
+    if(! $x eq "\n") { $_ .= $x; }
+    ($key,$val)=split(/->/, $_, 2);
+   
+    if($key =~ s/^MACRO\://) {
+      $db{MACRO}{$key}=$val;
+    }
+    if($key =~ s/^MACRO_ARCHES\://) {
+      $db{MACRO_ARCHES}{$key}=$val;
+    }
+    if($key =~ s/^DESC\://) {
+      $db{DESC}{$key}=$val;
+    }
+    if($key =~ s/^ACCUMULATE\://) {
+      $db{ACCUMULATE}{$key}=$val;
+    }
+    if($key =~ s/^UNIQUE\://) {
+      $db{UNIQUE}{$key}=1;
+    }
+    if($key =~ s/^FLAGS\://) {
+      $db{FLAGS}{$key}=$val;
+    }
+    if($key =~ s/^GROUP\://) {
+      $db{GROUP}{$key}=$val;
+    }
+    if($key =~ /^INITIALIZE\:(.+):(\d+\:(.+)$)/) {
+      $db{INITIALIZE}{$1}{$2}=$val;
+    }
+    if($key =~ /^ENV:(.+):(.+):(.+):(.+)$/) {
+      $db{ENV}{$1}{$2}{$3}{$4}=&bracify($val);
+    }
+  }  
+  close DB;
+  %db;
+}
+
+
+
+sub bracify {
+  # Take some string, like /home/foo/$ARCH and change it into
+  # /home/foo/${ARCH}.  This is done because, otherwise, shells can
+  # get fairly picky about what you append to such a string.
+  #
+  # We assume that only letters, numbers, and _ constitute variable
+  # names.
+  #
+  # Original routine in soft-msc
+  #
+  my($s) = @_;
+
+  while ($s =~ /\$[A-Za-z0-9_]+/) {
+    $s =~ s/\$([A-Za-z0-9_]+)/\$\{$1\}/;
+  }
+  $s;
+}

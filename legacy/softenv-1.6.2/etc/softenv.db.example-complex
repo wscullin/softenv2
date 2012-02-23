@@ -1,0 +1,936 @@
+#
+# softenv.db
+#
+# The main database for the SoftEnv system.      
+#   
+#   $Id: softenv.db.example-complex,v 1.3 2003/08/29 02:44:29 finley Exp $
+#                     
+#============================================================================
+# INSTRUCTIONS FOR EDITING THIS FILE.
+#
+#  1. Read 'man softenv-admin'.  Do it!  It describes the format of this file
+#
+#  2. Read 'man softenv-policy'.  Do it!  It describes what you should do
+#
+#  3. Read the comments above each section.
+#
+#  4. Think carefully about what you add:
+#     - New macros are probably dangerous.
+#     - It's better to add an application keyword and then put that keyword
+#       into existing macros than to add a keyword and tell people to use
+#       that keyword.
+#  5. After editing this file, check it for syntax errors by running:
+#       soft-msd -n
+#  6. Test the resulting environment by running:
+#       softcheck
+#     This will give you an environment based on your edited softenv.db.
+#     Note that you will need to make sure your changes are being used
+#     in your SOFTENVRC file.
+#  7. Then build the new database:
+#      soft-msd
+#
+#============================================================================
+#
+# Flags:
+#   power  - Handy for the "power" users, who want to build their own paths out
+#            of the various pieces.
+#   useful - A "useful" macro or keyword, but one that is not in the path.
+#   hide   - "Hide" this macro so that it's not in the 'softenv' command 
+#            output.
+#   auto   - A keyword that was found in an automated scan of the software
+#            tree, usually only found in soft-auto.db
+#============================================================================
+
+#============================================================================
+# Setting up the database defaults
+#============================================================================
+#
+# (%accumulate)
+#   This tells the SoftEnv system that these environment variables should be
+#   appended to as new values are found for them.   The alternative is to
+#   replace their value with the new value.
+#
+#   Typically this will be done for any PATH-like variable, but may be
+#   useful for other things.
+#
+#   Uniquify can be a 'y' or an 'n' (without quotes).  The 'y' means
+#   that new components to be added to a path will first be checked to
+#   see if they exist before being added.  You typically want this for
+#   PATH-like variables, so that, for example, they only have one instance
+#   of "/usr/bin" in the variable.
+#
+#   Separator can be any string, or no string.  It is the string used to
+#   separate individual components of the variable.  For PATH-like 
+#   variables, this will usually be a ':'.
+# 
+#
+(%accumulate) {
+    # varname           uniquify    separator
+    PATH                { y           :         }
+    MANPATH             { y           :         }
+    LD_LIBRARY_PATH     { y           :         }
+    LM_LICENSE_FILE     { y           :         }
+    IDL_PATH            { y           :         }
+    MATLABPATH          { y           :         }
+    TEXINPUTS           { y           :         }
+    PYTHONPATH          { y           :         }
+    SIDL_DLL_PATH       { y           :         }
+}
+
+#
+# A list of other database files to read.
+#
+# These databases are for convenience for keeping this file sane and
+# easy to manage.
+# 
+# These other databases don't cause the user's environment to be rebuilt
+# if they change; that only happens if _this_ file is touched
+#
+(%databases) {
+    softenv-local.db
+}
+
+#
+# Variables to initialize at the beginning of the user's .cache file.
+#
+# These should be translated into the first lines of the .cache file:
+#
+#   PATH 
+#       Is set here so that SoftEnv can access certain binaries 
+#       that it needs to do it's thang, like sed, uname, and whatami.
+#       PATH, as set here in %initialize, is not passed on to the PATH
+#       in the users resultant environment.
+#
+#   WHATAMI 
+#       Is used to specify the location of the WHATAMI binary.
+#
+#   ARCH 
+#       Must be defined, as the sh and csh output created by soft-msc
+#       relies on it being set for switch statements.
+#
+#   PLATFORM 
+#       Is a more appropriate term then ARCH, for the string it 
+#       contains.  ARCH will be deprecated in a future release in favor
+#       of PLATFORM.
+#
+(%initialize) {
+    [] {
+        PATH        /sbin:/usr/sbin:/bin:/usr/bin
+        WHATAMI     `/bin/whatami`
+        ARCH        $WHATAMI
+        PLATFORM    $WHATAMI
+    }
+}
+
+
+################################################################################
+#
+# New users will need to add @teragrid to their SOFTENVRC files in order to 
+# establish their TeraGrid environment.
+#
+(@teragrid) {
+    {desc:  "Current Production CTSS (Common TeraGrid Software Stack)"}
+    
+    @teragrid-v1.0
+}
+
+
+################################################################################
+#
+# TeraGrid software stack version 1
+#
+(@teragrid-v1.0) {
+    {desc:  "TeraGrid Software Stack v1.0"}
+    {flags: power}
+    
+    +user_paths
+    +os_paths
+    +tg_environment-1.0
+    +cvs_environment
+
+    #
+    # tg_apps_prefix lives in /etc/softenv/softenv-local.db
+    #
+    +tg_apps_prefix
+
+    +atlas-3.5.0
+    +globus-2.2.4-gnu
+    +gm-1.6.3
+    +intel_compilers-7.1
+    +intel_mkl-6.011
+    +java_provided-by-os
+    +maui-3.2.6
+    +mpich-1.2.5..10-intel-7.1
+    +openpbs-2.3.16
+    +srb-2.0
+
+    #
+    # softenv   -- only one instance -- provided as an RPM
+    # lapack    -- provided as an RPM for now
+    # goto      -- optional
+    # petsc     -- optional
+    # mpich-vmi -- optional
+    #
+
+}
+
+
+################################################################################
+#
+# user paths
+#
+(+user_paths) {
+    {desc: Standard user owned paths} 
+    {flags: power}
+    
+    [] {
+        PATH       $HOME/bin
+        MANPATH    $HOME/man
+    }
+}
+
+
+################################################################################
+#
+# os_paths
+#
+(+os_paths) {
+    {desc: "The system paths recommended by the os vendor."}
+    
+    [] {
+        PATH                /sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin:/usr/X11R6/bin
+        MANPATH             /usr/share/man:/usr/local/man:/usr/X11R6/man:/opt/gnome/man
+        WHATAMI             `/bin/whatami`
+        LD_LIBRARY_PATH     /usr/lib:/usr/X11R6/lib:$TG_APPS_PREFIX/lib
+    }
+
+}
+
+################################################################################
+#
+# maui
+#
+(+maui) {
+    {desc: "Maui Scheduler"}
+    {flags: power}
+
+    [] {
+        pointer +maui-3.2.6
+    }
+}
+
+(+maui-3.2.6) {
+    {desc: "Maui Scheduler 3.2.6"}
+    {flags: power}
+
+########## 
+#
+#   XXX change to this build location for the next build
+#
+#    [] {
+#        PATH       $TG_APPS_PREFIX/maui-3.2.6/bin
+#        MANPATH    $TG_APPS_PREFIX/maui-3.2.6/man
+#    }
+
+    [] {
+        PATH       /usr/local/maui/bin
+        MANPATH    /usr/local/maui/man
+    }
+}
+
+################################################################################
+#
+# pbs
+#
+#   Note:  Perhaps we can get Egan to change his pbs install path to
+#          /usr/local/$PLATFORM.  I'll check.  -Brian
+#
+(+pbs) {
+    {desc: "Portable Batch System"}
+    {flags: power}
+
+    [linux-sles8-ia32] {
+        pointer +openpbs-2.3.16
+    }
+
+    [linux-sles8-ia64] {
+        pointer +openpbs-2.3.16
+    }
+}
+
+(+openpbs-2.3.16) {
+    {desc: "Open Portable Batch System 2.3.16"}
+    {flags: power}
+
+    [linux-sles8-ia32] {
+        PATH       /usr/local/pbs/bin:/usr/local/pbs/sbin
+        MANPATH    /usr/local/pbs/man
+    }
+
+    [linux-sles8-ia64] {
+        PATH       /usr/local/pbs/ia64/bin:/usr/local/pbs/ia64/sbin
+        MANPATH    /usr/local/pbs/man
+    }
+}
+
+
+################################################################################
+#
+# intel_mkl
+#
+#   Install Notes:
+#       Install C and Fortran and MKL libs into common base directory structure
+#       (for now) of $TG_APPS_PREFIX/intel.
+#
+(+intel_mkl) {
+    {desc: "Intel Math Kernel Libraries"}
+    {flags: power}
+    
+    [linux-sles8-ia32] {
+        pointer +intel_mkl-6.011
+    }
+
+    [linux-sles8-ia64] {
+        pointer +intel_mkl-6.011
+    }
+}
+
+(+intel_mkl-6.011) {
+    {desc: "Intel Math Kernel Libraries 6.011"}
+    {flags: power}
+    
+    [linux-sles8-ia32] {
+        MKL_LIB_PATH    $TG_APPS_PREFIX/intel/mkl-6.011/lib/32
+        LD_LIBRARY_PATH $MKL_LIB_PATH
+        MKL_LIBS        "-l $MKL_LIB_PATH/libmkl_ia32.a -l $MKL_LIB_PATH/libguide.a"
+        BLAS_LIBS       $MKL_LIBS
+    }
+    
+    [linux-sles8-ia64] {
+        MKL_LIB_PATH    $TG_APPS_PREFIX/intel/mkl-6.011/lib/64
+        LD_LIBRARY_PATH $MKL_LIB_PATH
+        MKL_LIBS        "-l $MKL_LIB_PATH/libmkl_ipf.a -l $MKL_LIB_PATH/libguide.a"
+        BLAS_LIBS       $MKL_LIBS
+    }
+}
+
+#XXX Request for Comments here!
+#
+#    Do we want to try and figure out the appropriate GOTO_LIB variable, and
+#    automatically set it by cpu type?  This is possible, but will require
+#    more info than is currently known by softenv.  
+#
+#    I can modify "whatami" and add a --goto option, that would produce the
+#    leaf name of the appropriate goto lib to use on a particular system 
+#    (Ie: libgoto_it2.a).  We could then use that to automatically set a
+#    GOTO_LIB variable.  GOTO_LIB=`whatami --goto`.  I could also do the same
+#    for mkl.  "whatami --intel-mkl"
+#
+#    This could then be prepended with the appropriate /path/to/goto/lib by 
+#    softenv, producing an explicit path to the lib file needed by a user.
+#
+#       GOTO_LIB=`whatami --goto`
+#       GOTO_LIB_PATH=$TG_APPS_PREFIX/goto/lib
+#       LOCAL_GOTO_LIB=$GOTO_LIB_PATH/$GOTO_LIB
+#
+#    If we determine processor type, including cache size, etc. from the 
+#    login node, then we must assume that all nodes in the cluster have the 
+#    same cpu(s).
+#
+#    Additionally, in the mkl section above, BLAS_LIBS is set to the 
+#    appropriate mkl lib files.  If +goto is specified in the users 
+#    SOFTENVRC file, then BLAS_LIBS is prepended with GOTO_LIB.  This allows
+#    users to simply specify "-l $BLAS_LIBS" and expect it to work whether
+#    using +goto, or just mkl by itself.
+#
+#    -Brian
+#
+#
+################################################################################
+#
+# goto
+#
+#   Optional.  The BLAS_LIB var set here overrides BLAS_LIB set by intel_mkl.
+#
+(+goto) {
+    {desc: "goto BLAS libraries"}
+    {flags: power}
+    
+    [] {
+        #GOTO_LIB        `whatami --goto`
+        #GOTO_LIB_PATH   $TG_APPS_PREFIX/goto/lib
+        #LD_LIBRARY_PATH $GOTO_LIB_PATH
+        #BLAS_LIBS       "-l $GOTO_LIB $MKL_LIBS"
+    }
+}
+
+################################################################################
+#
+# globus
+#
+(+globus) {
+    {desc: "Globus -- The Meta Scheduler"}
+    {flags: power}
+    [] {
+        pointer +globus-2.2.4-gnu
+    }
+}  
+  
+(+globus-2.2.4-gnu) {
+    {desc: "Globus -- The Meta Scheduler 2.2.4, GNU Compilers 3.2.1"}
+    {flags: power}
+    
+    [] {
+        GLOBUS_LOCATION     $TG_APPS_PREFIX/globus-2.2.4-gnu
+        GLOBUS_PATH         $TG_APPS_PREFIX/globus-2.2.4-gnu
+        LD_LIBRARY_PATH     $TG_APPS_PREFIX/globus-2.2.4-gnu/lib
+        LIBPATH             $TG_APPS_PREFIX/globus-2.2.4-gnu/lib
+        SHLIB_PATH          $TG_APPS_PREFIX/globus-2.2.4-gnu/lib
+        SASL_PATH           $TG_APPS_PREFIX/globus-2.2.4-gnu/lib/sasl
+        MANPATH             $TG_APPS_PREFIX/globus-2.2.4-gnu/man
+        PATH                $TG_APPS_PREFIX/globus-2.2.4-gnu/bin:$TG_APPS_PREFIX/globus-2.2.4/sbin
+    }
+}  
+
+(+globus-2.2.4-intel-7.1) {
+    {desc: "Globus -- The Meta Scheduler 2.2.4, Intel Compilers 7.1"}
+    {flags: power}
+    
+    [] {
+        GLOBUS_LOCATION     $TG_APPS_PREFIX/globus-2.2.4-intel-7.1
+        GLOBUS_PATH         $TG_APPS_PREFIX/globus-2.2.4-intel-7.1
+        LD_LIBRARY_PATH     $TG_APPS_PREFIX/globus-2.2.4-intel-7.1/lib
+        LIBPATH             $TG_APPS_PREFIX/globus-2.2.4-intel-7.1/lib
+        SHLIB_PATH          $TG_APPS_PREFIX/globus-2.2.4-intel-7.1/lib
+        SASL_PATH           $TG_APPS_PREFIX/globus-2.2.4-intel-7.1/lib/sasl
+        MANPATH             $TG_APPS_PREFIX/globus-2.2.4-intel-7.1/man
+        PATH                $TG_APPS_PREFIX/globus-2.2.4-intel-7.1/bin:$TG_APPS_PREFIX/globus-2.2.4/sbin
+    }
+}  
+
+(+globus-2.2.4-intel-7.1-mpicc-ssh) {
+    {desc: "Globus -- The Meta Scheduler 2.2.4, Intel Compilers 7.1, mpicc, ssh"}
+    {flags: power}
+    
+    [] {
+        GLOBUS_LOCATION     $TG_APPS_PREFIX/globus-2.2.4-intel-7.1-mpicc-ssh
+        GLOBUS_PATH         $TG_APPS_PREFIX/globus-2.2.4-intel-7.1-mpicc-ssh
+        LD_LIBRARY_PATH     $TG_APPS_PREFIX/globus-2.2.4-intel-7.1-mpicc-ssh/lib
+        LIBPATH             $TG_APPS_PREFIX/globus-2.2.4-intel-7.1-mpicc-ssh/lib
+        SHLIB_PATH          $TG_APPS_PREFIX/globus-2.2.4-intel-7.1-mpicc-ssh/lib
+        SASL_PATH           $TG_APPS_PREFIX/globus-2.2.4-intel-7.1-mpicc-ssh/lib/sasl
+        MANPATH             $TG_APPS_PREFIX/globus-2.2.4-intel-7.1-mpicc-ssh/man
+        PATH                $TG_APPS_PREFIX/globus-2.2.4-intel-7.1-mpicc-ssh/bin:$TG_APPS_PREFIX/globus-2.2.4/sbin
+    }
+}  
+
+
+################################################################################
+#
+# intel_compilers
+#
+#   Install Notes:
+#       Install C and Fortran and MKL libs into common base directory structure
+#       (for now) of $TG_APPS_PREFIX/intel.
+#
+#   Note:
+#       Sandra Bittner from ANL is contacting Intel about improving their
+#       packaging to allow for more flexible installation.
+#
+(+intel_compilers) {
+    {desc: "Intel C & Fortran Compilers"}
+    {flags: power}
+    
+    [linux-sles8-ia32] {
+        pointer +intel_compilers-7.1
+    }
+
+    [linux-sles8-ia64] {
+        pointer +intel_compilers-7.1
+    }
+}
+
+(+intel_compilers-7.1) {
+    {desc: "Intel C & Fortran Compilers 7.1"}
+    {flags: power}
+    
+    [linux-sles8-ia32] {
+        PATH		    $TG_APPS_PREFIX/intel/compiler70/ia32/bin
+        LD_LIBRARY_PATH	$TG_APPS_PREFIX/intel/compiler70/ia32/lib
+        INTEL_HOME		$TG_APPS_PREFIX/intel/compiler70/ia32
+        INTEL_INSTALL	$TG_APPS_PREFIX/intel/compiler70/ia32
+        INTEL_LIB		$TG_APPS_PREFIX/intel/compiler70/ia32/lib
+        INTEL_INCLUDE	$TG_APPS_PREFIX/intel/compiler70/ia32/include
+        MANPATH		    $TG_APPS_PREFIX/intel/compiler70/man
+    }
+    
+    [linux-sles8-ia64] {
+        PATH		    $TG_APPS_PREFIX/intel/compiler70/ia64/bin
+        LD_LIBRARY_PATH	$TG_APPS_PREFIX/intel/compiler70/ia64/lib
+        INTEL_HOME		$TG_APPS_PREFIX/intel/compiler70/ia64
+        INTEL_INSTALL	$TG_APPS_PREFIX/intel/compiler70/ia64
+        INTEL_LIB		$TG_APPS_PREFIX/intel/compiler70/ia64/lib
+        INTEL_INCLUDE	$TG_APPS_PREFIX/intel/compiler70/ia64/include
+        MANPATH		    $TG_APPS_PREFIX/intel/compiler70/man
+    }
+
+}
+
+
+################################################################################
+#
+# srb
+#
+(+srb) {
+    {desc: "SRB Client"}
+    {flags: power}
+    
+    [] {
+        pointer +srb-2.0
+    }
+}
+
+(+srb-2.0) {
+    {desc: "SRB Client 2.0"}
+    {flags: power}
+    
+    [] {
+        PATH		    $TG_APPS_PREFIX/srb-2.0/bin
+        MANPATH		    $TG_APPS_PREFIX/srb-2.0/man
+        LD_LIBRARY_PATH $TG_APPS_PREFIX/srb-2.0/lib
+    }
+}
+
+################################################################################
+#
+# xcat
+#
+#   Typically only used by cluster administrators.
+#
+(+xcat_environment) {
+    {desc: "XCAT -- eXtreme Cluster Administration Toolkit"}
+    {flags: power}
+    
+    [linux-sles8-ia32] {
+        XCATROOT 	/opt/xcat
+        XCATPREFIX  /opt/xcat 
+        PATH	    /opt/xcat/bin/:/opt/xcat/sbin
+        MANPATH	    /opt/xcat/man
+    }
+    
+    [linux-sles8-ia64] {
+        XCATROOT 	/opt/xcat
+        XCATPREFIX  /opt/xcat 
+        PATH	    /opt/xcat/ia64/bin:/opt/xcat/ia64/sbin
+        MANPATH	    /opt/xcat/man
+    }
+}
+
+################################################################################
+#
+# gm
+#
+(+gm) {
+    {desc: "Myricom GM networking software"}
+    {flags: power}
+    
+    [] {
+        pointer +gm-1.6.3
+    }
+}
+
+(+gm-1.6.3) {
+    {desc: "Myricom GM networking software 1.6.3"}
+    {flags: power}
+    
+    [] {
+        #
+        # Possibly use variable expanded gm location in the future.  Dan 
+        # Lapine's initial supposition is that it would look like this:
+        #
+        #   /opt/gm-1.6.3_Linux-`uname -r`-ia64
+        #
+        PATH		    /opt/gm/bin
+        LD_LIBRARY_PATH	/opt/gm/lib
+    }
+
+}
+
+
+################################################################################
+#
+# gsi-openssh
+#
+(+gsi-openssh) {
+    {desc: "GSI OpenSSH"}
+    {flags: power}
+    
+    [] {
+        pointer +gsi-openssh-2.5
+    }
+}
+  
+(+gsi-openssh-2.5) {
+    {desc: "GSI OpenSSH 2.5"}
+    {flags: power}
+    
+    [] {
+        PATH		    $TG_APPS_PREFIX/gsi-openssh-2.5/bin
+        MANPATH		    $TG_APPS_PREFIX/gsi-openssh-2.5/man
+    }
+}
+
+
+################################################################################
+#
+# mpich
+#
+(+mpich) {
+    {desc: "MPICH for Ethernet"}
+    {flags: power}
+    
+    [] {
+        pointer +mpich-1.2.5..10-intel-7.1
+    }
+}
+
+(+mpich-1.2.5..10-gnu) {
+    {desc: "MPICH for Ethernet 1.2.5..10, GNU Compilers 3.2.1"}
+    {flags: power}
+    
+    [] {
+        PATH		    $TG_APPS_PREFIX/mpich-1.2.5..10-gnu/bin
+        TG_MPICH_IP     $TG_APPS_PREFIX/mpich-1.2.5..10-gnu/bin/mpicc
+        MANPATH		    $TG_APPS_PREFIX/mpich-1.2.5..10-gnu/man
+        LD_LIBRARY_PATH	$TG_APPS_PREFIX/mpich-1.2.5..10-gnu/lib
+    }
+}
+
+(+mpich-1.2.5..10-intel-7.1) {
+    {desc: "MPICH for Ethernet 1.2.5..10, Intel Compilers 7.1"}
+    {flags: power}
+    
+    [] {
+        PATH		    $TG_APPS_PREFIX/mpich-1.2.5..10-intel-7.1/bin
+        TG_MPICH_IP     $TG_APPS_PREFIX/mpich-1.2.5..10-intel-7.1/bin/mpicc
+        MANPATH		    $TG_APPS_PREFIX/mpich-1.2.5..10-intel-7.1/man
+        LD_LIBRARY_PATH	$TG_APPS_PREFIX/mpich-1.2.5..10-intel-7.1/lib
+    }
+}
+
+
+################################################################################
+#
+# mpich-g2
+#
+(+mpich-g2) {
+    {desc: "MPICH for G2"}
+    {flags: power}
+    
+    [] {
+        pointer +mpich-g2-1.2.5..10-intel-7.1
+    }
+}
+
+(+mpich-g2-1.2.5..10-intel-7.1) {
+    {desc: "MPICH for G2 1.2.5..10, Intel Compilers 7.1"}
+    {flags: power}
+    
+    [] {
+        PATH		    $TG_APPS_PREFIX/mpich-g2-1.2.5..10-intel-7.1/bin
+        TG_MPICH_G2     $TG_APPS_PREFIX/mpich-g2-1.2.5..10-intel-7.1/bin/mpicc
+        MANPATH		    $TG_APPS_PREFIX/mpich-g2-1.2.5..10-intel-7.1/man
+        LD_LIBRARY_PATH	$TG_APPS_PREFIX/mpich-g2-1.2.5..10-intel-7.1/lib
+    }
+}
+
+
+################################################################################
+#
+# mpich-vmi
+#
+#   Optional.
+#
+(+mpich-vmi) {
+    {desc: "MPICH for VMI"}
+    {flags: power}
+    
+    [] {
+        pointer +mpich-vmi-1.1-intel-7.1
+    }
+}
+
+(+mpich-vmi-1.1-intel-7.1) {
+    {desc: "MPICH for VMI, Intel Compilers"}
+    {flags: power}
+    
+    [] {
+        PATH    $TG_APPS_PREFIX/mpich-vmi-1.1-intel-7.1/bin
+    }
+}
+
+(+mpich-vmi-1.1-gnu) {
+    {desc: "MPICH for VMI, GNU Compilers"}
+    {flags: power}
+    
+    [] {
+        PATH    $TG_APPS_PREFIX/mpich-vmi-1.1-gnu/bin
+    }
+}
+
+
+################################################################################
+#
+# mpich-gm
+#
+(+mpich-gm) {
+    {desc: "MPICH for Myrinet"}
+    {flags: power}
+    
+    [] {
+        pointer +mpich-gm-1.2.5..10-gm-1.6.3-gnu
+    }
+}
+
+(+mpich-gm-1.2.5..10-gm-1.6.3-gnu) {
+    {desc: "MPICH for Myrinet 1.2.5..10, GM 1.6.3, GNU Compilers 3.2.1"}
+    {flags: power}
+    
+    [] {
+        PATH		    $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu/bin
+        TG_MPICH_GM     $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu/bin/mpicc
+        MANPATH		    $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu/man
+        LD_LIBRARY_PATH	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu/lib
+        MPICHGM_HOME	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu
+        MPICHGM_INSTALL	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu
+        MPICHGM_LIB		$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu/lib
+        MPICHGM_INCLUDE	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu/include
+    }
+}
+
+(+mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh) {
+    {desc: "MPICH for Myrinet 1.2.5..10, GM 1.6.3, GNU Compilers 3.2.1, SSH"}
+    {flags: power}
+    
+    [] {
+        PATH		    $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh/bin
+        TG_MPICH_GM     $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh/bin/mpicc
+        MANPATH		    $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh/man
+        LD_LIBRARY_PATH	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh/lib
+        MPICHGM_HOME	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh
+        MPICHGM_INSTALL	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh
+        MPICHGM_LIB		$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh/lib
+        MPICHGM_INCLUDE	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-gnu-ssh/include
+    }
+}
+
+(+mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1) {
+    {desc: "MPICH for Myrinet 1.2.5..10, GM 1.6.3, Intel Compilers 7.1"}
+    {flags: power}
+    
+    [] {
+        PATH		    $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1/bin
+        TG_MPICH_GM     $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1/bin/mpicc
+        MANPATH		    $TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1/man
+        LD_LIBRARY_PATH	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1/lib
+        MPICHGM_HOME	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1
+        MPICHGM_INSTALL	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1
+        MPICHGM_LIB		$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1/lib
+        MPICHGM_INCLUDE	$TG_APPS_PREFIX/mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1/include
+    }
+}
+
+
+################################################################################
+#
+# hdf
+#
+(+hdf4) {
+    {desc: "HDF4"}
+    {flags: power}
+    
+    [] {
+        PATH                $TG_APPS_PREFIX/hdf4/bin
+        LD_LIBRARY_PATH     $TG_APPS_PREFIX/hdf4/lib
+    }
+}
+
+(+hdf5) {
+    {desc: "HDF5"}
+    {flags: power}
+    
+    [] {
+        PATH                $TG_APPS_PREFIX/hdf5/bin
+        LD_LIBRARY_PATH     $TG_APPS_PREFIX/hdf5/lib
+    }
+}
+
+
+################################################################################
+#
+# java
+#
+(+java) {
+    {desc: "Java Environment"
+    {flags: power}
+    
+    [] {
+        pointer +java_provided-by-os
+    }
+}
+
+(+java_provided-by-os) {
+    {desc: "Java Environment Provided by Distribution"
+    {flags: power}
+    
+    [] {
+        PATH        /usr/lib/java/bin:/usr/lib/java/jre/bin
+        JAVA_BINDIR	/usr/lib/java/bin
+        JAVA_ROOT	/usr/lib/java
+        JAVA_HOME 	/usr/lib/java
+        JRE_HOME	/usr/lib/java/jre
+        JDK_HOME    /usr/lib/java
+        SDK_HOME	/usr/lib/java
+    }
+}
+
+
+################################################################################
+#
+# cvs
+#
+(+cvs_environment) {
+    {desc: "CVS Environment Variables"}
+    {flags: power}
+    
+    [] {
+        CVS_RSH	ssh  
+    }
+}
+
+################################################################################
+#
+# atlas
+#
+(+atlas) {
+    {desc: "ATLAS"}
+    {flags: power}
+    
+    [] {
+        pointer +atlas-3.5.0
+    }
+}
+
+(+atlas-3.5.0) {
+    {desc: "ATLAS 3.5.0"}
+    {flags: power}
+    
+    [] {
+        ATLAS_LOCATION	$TG_APPS_PREFIX/atlas-3.5.0
+    }
+}
+
+
+################################################################################
+#
+# PETSc
+#
+(+petsc) {
+    {desc: "PETSc 2.1.5" }
+    {flags: power}
+    
+    [linux-sles8-ia32] {
+        pointer +petsc-2.1.5-gnu
+    }
+
+    [linux-sles8-ia64] {
+        pointer +petsc-2.1.5-gnu
+    }
+
+}
+
+(+petsc-2.1.5-gnu) {
+    {desc: "PETSc 2.1.5, GNU Compilers 3.2.1" }
+    {flags: power}
+    
+    [linux-sles8-ia32] {
+        PETSC_ARCH linux
+        PETSC_DIR  $TG_APPS_PREFIX/petsc-2.1.5-gnu
+    }
+
+    [linux-sles8-ia64] {
+        PETSC_ARCH linux64
+        PETSC_DIR  $TG_APPS_PREFIX/petsc-2.1.5-gnu
+    }
+}
+
+(+petsc-2.1.5-intel-7.1) {
+    {desc: "PETSc 2.1.5, Intel Compilers 7.1" }
+    {flags: power}
+    
+    [linux-sles8-ia32] {
+        PETSC_ARCH linux64_intel
+        PETSC_DIR  $TG_APPS_PREFIX/petsc-2.1.5-intel-7.1
+    }
+
+    [linux-sles8-ia64] {
+        PETSC_ARCH linux_intel
+        PETSC_DIR  $TG_APPS_PREFIX/petsc-2.1.5-intel-7.1
+    }
+}
+
+(@petsc-2.1.5-mpich-gm-1.2.5..10-gm-1.6.3-gnu) {
+    {desc: "PETSc 2.1.5, MPICH for Myrinet 1.2.5..10, GM 1.6.3, GNU Compilers 3.2.1" }
+    {flags: power}
+    
+    +mpich-gm-1.2.5..10-gm-1.6.3-gnu
+    +petsc-2.1.5-gnu
+}
+
+(@petsc-2.1.5-mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1) {
+    {desc: "PETSc 2.1.5, MPICH for Myrinet 1.2.5..10, GM 1.6.3, Intel Compilers 7.1" }
+    {flags: power}
+    
+    +mpich-gm-1.2.5..10-gm-1.6.3-intel-7.1
+    +intel_compilers-7.1
+    +petsc-2.1.5-intel-7.1
+}
+
+
+################################################################################
+#
+# lapack
+#
+#   Currently provided as an RPM.  Libs in standard OS location of /usr/lib.
+#
+
+################################################################################
+#
+# softenv
+#
+#   An RPM will be provided for installing the SoftEnv itself, so no entry will 
+#   be needed in this file.
+#
+
+################################################################################
+#
+# standard environment (minimal)
+#
+#   To by-pass the SoftEnv system, and manage your own environment, just 
+#   create a file in your home directory called ".nosoftenv".
+#
+#       "touch ~/.nosoftenv"
+#
+
+################################################################################
+
+(+debug) {
+    {flags: hidden}
+    [] {
+        command "echo Output from +debug here..."
+        command "echo PATH: $PATH"
+        command "echo PLATFORM: $PLATFORM"
+        command "echo WHATAMI: $WHATAMI"
+    }
+}
+

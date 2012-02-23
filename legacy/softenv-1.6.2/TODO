@@ -1,0 +1,11 @@
+#
+#   SoftEnv
+#
+#   $Id: TODO,v 1.1 2003/09/02 04:13:58 finley Exp $
+#
+
+o Take a list of platforms as stdin from whatami.
+  Or better yet, work with whatever architectures are specified in the
+  database files.  Why should these need to be defined ahead of time at
+  all? -BEF-
+

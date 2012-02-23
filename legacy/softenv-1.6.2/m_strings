@@ -1,0 +1,15 @@
+# strings2sub
+# Substiute this for that:
+#
+#  This                 That
+
+x.y.z                           `util/m_version m_info`
+/home/bailey/proj/softenv       !SOFTENV_HOME!
+/usr/local/bin/perl5            !PERL_PATH!
+M_SYSTEM                        Msys
+M_SYSTEM_LONG                   MCS Systems Administration Toolkit
+M_PROGRAM_NAME                  `util/m_package m_info`
+M_PROGRAM_DATE                  `date +"%e %B %Y"`
+M_VERSION                       `util/m_version m_info`
+M_AUTH_INITIALS                 Alan
+M_AUTH_EMAIL                    bailey@mcs.anl.gov

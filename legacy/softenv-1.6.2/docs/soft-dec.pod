@@ -1,0 +1,52 @@
+=head1 NAME
+
+soft-dec - Program to dynamically change the software environment
+
+=head1 DESCRIPTION
+
+This program changes the users software environment by dynamically adding
+or deleting single keywords.  It is meant to be called by 'soft'
+
+B<NOTE:> This manual page only describes basic information for the program
+titled soft-dec. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+soft-dec [C<-d> C<-t>] csh|sh add|delete keyword|macro
+
+=over
+
+=item -t
+
+Use the test database
+
+=item -d
+
+This option turns on debugging
+
+=item csh|sh
+
+This specifies the shell format to output, and must be the first argument
+on the command line (excepting the options)
+
+=item add|delete
+
+This specifies whether to add or delete the keyword.  It must be the
+second argument on the command line.
+
+=item keyword|macro
+
+The actual keyword or macro to add or delete from the environment.
+
+=item -u -h --help
+
+Helpful messages
+
+=item -v --version
+
+Version
+
+=back

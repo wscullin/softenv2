@@ -1,0 +1,8 @@
+77,79c77,79
+<     if ($?prompt) then
+<       echo "$softname"": updating your software environment, one moment..."
+<     endif
+---
+> #   if ($?prompt) then
+> #     echo "$softname"": updating your software environment, one moment..."
+> #   endif

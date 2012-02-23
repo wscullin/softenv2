@@ -1,0 +1,376 @@
+#!!PERL_PATH!
+#
+# soft-mad
+# The SoftEnv "make automated database" program
+#
+# This is part of Msys, the MCS Systems Administration Toolkit
+# For more information, see http://www.mcs.anl.gov/systems/software/ .
+#
+# Copyright (c) University of Chicago 1999.
+# See the COPYRIGHT file in the distribution for details on the copyright.
+# 
+# ===========================================================================
+#
+# Description:
+#
+# This program, soft-mad, creates the file soft-auto.db from the software
+# tree structure.  It assumes the structure of the software tree.  
+#
+# ===========================================================================
+#   
+# Authors and ID String:
+# 
+#   Alan Bailey, bailey@mcs.anl.gov
+# 
+# $Id: soft-mad,v 1.14 2003/08/28 03:20:40 finley Exp $
+#
+# ===========================================================================
+#
+#  soft-mad [-d]
+#
+#   -d               : turns on debugging
+#   -u -h --help     : helpful stuff   
+#   -v --version     : version   
+#
+# ===========================================================================
+#
+# Exit Codes:
+#
+# 0 on success
+# 1 on error
+#
+# ===========================================================================
+
+
+use Getopt::Std;
+
+use strict;
+
+use vars qw($package_name $version %supported $auto_db);
+use vars qw($program %bin %man %env @col @pkg %linked_packages %oneliner);
+use vars qw($debug);
+
+&set_globals;
+&find_pkgs;
+&print_packages;
+
+exit(0);
+
+
+
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-
+#  SUBROUTINES
+#-=-=-=-=-=-=-=-=-=-=-=-=-
+
+sub set_globals {
+  push(@INC, 'SOFTENV_ETC_DIR');
+  require 'softenv.config.pl';
+
+  ($program = $0) =~ s:.*/::;
+
+  &parse_commandline;
+
+}
+
+sub parse_commandline {
+
+  use vars qw($opt_h $opt_u $opt_v $opt_d);
+
+  if ($ARGV[0] eq "--help") {
+    &usage;
+    exit(0);
+  }
+  if ($ARGV[0] eq "--version") {
+    &version;
+    exit(0);
+  }
+  getopt('');
+  $debug = 1 if $opt_d;
+
+  if (($opt_h) or ($opt_u)) {
+    &usage();
+    exit(0);
+  }
+  if ($opt_v) {
+    &version();
+    exit(0);  
+  }
+}
+
+
+
+sub find_pkgs {
+  # This sub gets a list of all the packages and then makes lots of arrays
+  # and hashes to store all of the information
+  # @col and @pkg store the collection and package of each piece
+  # %bin - the path to the bin directory
+  # %man - the path to the man directory
+  # %env - a list of env variables, seperated by '\n' and equated with '='
+  #
+  # %bin, %man, and %env all are referenced by "$arch:$col:$pkg"
+
+  my(@all_pkgs, $col, $pkg, $arch, $i);
+
+  # find all of the packages
+  @all_pkgs = </software/common/*/packages/*>;
+  while ($_ = shift @all_pkgs) {
+    ($_,$_,$_,$col,$_,$pkg) = split(/\//,$_);
+    unshift(@col, $col);
+    unshift(@pkg, $pkg);
+  }
+
+  foreach $arch ('common', keys %supported) {
+    for($i = 0; $i < @pkg; $i++) {
+      &find_bin_dir($arch, $i);
+      &find_man_dir($arch, $i);
+      &find_env_vars($arch, $i);
+      &find_link_info($arch, $i);
+      &find_pkg_info($arch, $i);
+    }
+  }
+}
+
+
+sub find_bin_dir {
+
+  my($arch, $i) = @_;
+
+  # Finds the bin directory, if it exists
+  if(-d "/software/$arch/$col[$i]/packages/$pkg[$i]/bin") {
+    if(</software/$arch/$col[$i]/packages/$pkg[$i]/bin/*>) {
+      $bin{"$arch:$col[$i]:$pkg[$i]"}=
+          "/software/$arch/$col[$i]/packages/$pkg[$i]/bin";
+      print "Found /software/$arch/$col[$i]/packages/$pkg[$i]/bin\n"
+          if $debug;
+    }
+  }
+}  
+
+sub find_man_dir {
+
+  my($arch, $i) = @_;
+
+  # Finds the man directory, if it exists
+  if(-d "/software/$arch/$col[$i]/packages/$pkg[$i]/man") {
+    if(</software/$arch/$col[$i]/packages/$pkg[$i]/man/man?/*>) {
+      $man{"$arch:$col[$i]:$pkg[$i]"}=
+          "/software/$arch/$col[$i]/packages/$pkg[$i]/man";
+      print "Found /software/$arch/$col[$i]/packages/$pkg[$i]/man\n"
+          if $debug;
+    }
+  }
+}
+
+sub find_env_vars {
+
+  my($arch, $i) = @_;
+  my(@vars);
+
+  # Finds any environment variables referenced in admin/env
+  $env{"$arch:$col[$i]:$pkg[$i]"}="";
+  if(-f "/software/$arch/$col[$i]/packages/$pkg[$i]/admin/env") {
+    open (ENV, "/software/$arch/$col[$i]/packages/$pkg[$i]/admin/env");
+    @vars = ();
+
+    print "  For $pkg[$i], found the following variables:\n" if $debug;
+    while(<ENV>) {
+      chomp;
+      print "  $_\n" if $debug;
+      push(@vars, $_);
+    }
+    $env{"$arch:$col[$i]:$pkg[$i]"}=join("\n",@vars); 
+    close ENV;
+  }
+}
+
+sub find_link_info {
+
+  my($arch, $i) = @_;
+  my($pkg);
+
+  # If the file admin/link exists, make this package point to
+  # the package name without the version numbers
+  if(-f "/software/$arch/$col[$i]/packages/$pkg[$i]/admin/link") {
+    $pkg = $pkg[$i];
+    $pkg =~ s,(.*)-[x0-9]+\..*,$1,;
+
+    # ignore unversioned packages for this
+    unless($pkg eq $pkg[$i]) {
+      print "  For $pkg[$i], found a link to $pkg\n" if $debug;
+      $linked_packages{"$col[$i]:$pkg"}=1;
+      $bin{"$arch:$col[$i]:$pkg"} = $bin{"$arch:$col[$i]:$pkg[$i]"};
+      $man{"$arch:$col[$i]:$pkg"} = $man{"$arch:$col[$i]:$pkg[$i]"};
+      $env{"$arch:$col[$i]:$pkg"} = $env{"$arch:$col[$i]:$pkg[$i]"};
+    }
+  }
+}
+
+sub find_pkg_info {
+
+  my($arch, $i) = @_;
+  my($oneliner);
+
+  # If the file admin/pkginfo exists, soft-mad looks in that file
+  # for the string ONELINER.  After that will be a one line
+  # description of the program.  We want that.      
+  if ((-f "/software/$arch/$col[$i]/packages/$pkg[$i]/admin/pkginfo")
+      and (! $oneliner{"$col[$i]:$pkg[$i]"})) {
+    open(PKGINFO, "/software/$arch/$col[$i]/packages/$pkg[$i]/admin/pkginfo") || next;
+    ($oneliner, $_) = grep (/^ONELINER .*/, <PKGINFO>);
+    close PKGINFO;
+    chomp $oneliner;
+    $oneliner=~s,ONELINER\s*,,;
+    $oneliner=~s,<oneliner>,,;
+    unless ($oneliner eq "") {
+      $oneliner{"$col[$i]:$pkg[$i]"} = $oneliner;
+      print "  For $pkg[$i], found the following oneliner:\n" if $debug;
+      print "  $oneliner\n" if $debug;
+    }
+  }
+}
+
+
+
+#-=-=-=-=-=-=-
+# this takes all of the packages and calls add_packages
+# more details down below in add_package
+
+sub print_packages
+{
+
+  my($i);
+
+  link("$auto_db", "$auto_db.old");
+  umask(0222);
+  open(DB,">$auto_db.new") || die "$program: Unable to open $auto_db.new";
+
+  print DB "# DO NOT MODIFY THIS FILE\n";
+  print DB "# It was automatically generated by $program.\n";
+  print DB "# ", `date`, "\n";
+
+
+  # first you add all the normal packages with the same name for the key
+  # as the the package name
+  for($i = 0; $i < $#pkg; $i++) {
+    next if(&empty_pkg($i));
+    &print_package($col[$i],$pkg[$i]);
+  }
+
+  # this is for all the packages where a short name will point to a longer
+  # name
+  # i.e. screen would run from screen-3.7.6.5.4.4.3.3.2.1
+  foreach $_ (keys %linked_packages) {
+    &print_package(split(/:/,$_,2));
+  }
+  close DB;
+  unlink("$auto_db");
+  link("$auto_db.new", "$auto_db");
+  unlink("$auto_db.new");
+  unlink("$auto_db.old");
+}
+
+
+
+#-=-=-=-=-=-=-
+# This takes its parameters and puts that package into the auto.db file
+# it does this first for the common directories
+#-=-=-=-=-=-=-
+sub print_package {
+  my($col,$pkg) = ($_[0],$_[1]);
+  my($hashkey) = "$col:$pkg";
+  my($combin, $comman, $comenv, $arch, $bin, $man, $env);
+  my($env_variable, @all_envs, $name, $value);
+
+  print DB "(+$pkg)\n{\n";
+
+  if($oneliner{"$hashkey"}) {
+    print DB "  {desc: \"$oneliner{\"$hashkey\"}\"}\n";
+  }
+  print DB "  {flags: auto}\n\n";
+
+  $combin=$bin{"common:$hashkey"};
+  $comman=$man{"common:$hashkey"};
+  $comenv=$env{"common:$hashkey"};
+
+  foreach $arch ('common', keys %supported) {
+    $bin = $bin{"$arch:$col:$pkg"};
+    $man = $man{"$arch:$col:$pkg"};
+    $env = $env{"$arch:$col:$pkg"};
+
+    if($bin || $man || $env) {
+      
+      if ($arch eq "common")
+      { print DB "  []  {\n"; }
+      else {print DB "  [$arch]  {\n";  }
+
+      if ($bin) { print DB "\tPATH $bin\n"; }
+      elsif ($combin) { print DB "\tPATH $bin{\"common:$col:$pkg\"}\n"; }
+
+      if ($man) { print DB "\tMANPATH $man\n"; }
+      elsif ($comman) { print DB "\tMANPATH $man{\"common:$col:$pkg\"}\n"; }
+
+      unless($env eq "") {
+        @all_envs = split('\n', $env);
+        foreach $env_variable (@all_envs) {
+          ($name, $value) = split('=', $env_variable);
+          print DB "\t$name $value\n";
+        }
+
+      }
+      print DB "  }\n";
+    }
+  }
+  print DB "}\n\n";
+}
+
+
+#-=-=-=-=-=-=-
+# checks to see if absolutely nothing of the package exists
+# if anything at all exists, this returns zero and all is fine
+#-=-=-=-=-=-=-
+sub empty_pkg {
+
+  my($x) = $_[0];
+  my($rest_of_key, $ret);
+
+  $rest_of_key = "$col[$x]:$pkg[$x]";
+  $ret = 1;
+
+  foreach ('common', keys %supported) 
+  {
+    if ($bin{"$_:$rest_of_key"} || 
+        $man{"$_:$rest_of_key"} || 
+        $env{"$_:$rest_of_key"}) { 
+      $ret = 0; 
+    }
+  }
+  return $ret;
+}
+
+sub usage {
+print <<"EOF";
+
+$program is part of $package_name version $version  
+    
+  Usage:
+    $program [-d]
+     -d             : turns on debugging
+     -u -h --help   : helpful stuff
+     -v --version   : version
+      
+  Purpose:
+     $program is part of the $package_name system. It creates the
+     automated database file from the programs and files in the /software
+     tree
+
+EOF
+}
+
+sub version {
+print <<"EOF";
+
+$program is part of $package_name version $version
+  
+EOF
+}

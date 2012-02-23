@@ -1,0 +1,10 @@
+#!/usr/local/bin/perl
+
+while (<>) {
+  chop; 
+  if(/^\s*package:\s*(\S+)\s*$/) {
+    $package = $1;
+    print "$package\n";
+    exit(0);
+  }
+}	

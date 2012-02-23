@@ -1,0 +1,992 @@
+thinking.txt
+------------
+This file is where I keep strategy, thinking, and over all notes while
+coding on softenv.
+
+10 September 2002
+
+Ok, there's an issue.  I'm currently deleting any accumulated variables
+bfore soft touches them, but also I sometime have initial values for these
+variables.  But I don't want to leave the initial value on after soft is
+does, because the path will be odd.
+
+So this is what I'll do:
+
+1. delete all accumulate variables
+2. set up the ones that have initial values
+  - so those will just be reversed
+3. do soft as normal.
+4. at the end, for those accumulate vars that had definitions, do the sed
+trick on them:
+
+setenv PATH `echo $PATH | sed -e 's#^goofoo:*##'`
+
+Yeah, I should do SOFT_REMOVE, to protect it from quotes or whatever.  It
+still won't be protected from #.
+
+But there's a problem, the globus external stuff adds to the front of the
+PATH, so we can't detect it with ^ in th regexp.  And if we don't bind it
+to the front, it could blow away anything else with that string.  For
+example, removing all '/bin' values in PATH would be quite problematic.
+
+Now wait, if we have an initial value, what if it should be kept around
+afterwards.  No, since the initial values aren't mean to be authoritative
+in regards to accumulated variables.  I think..  Definitely not with PATH
+
+So I'm thinking of setting NEW_PATH instead of PATH.  And then at the end,
+copy NEW_PATH to PATH.  Oh, wait.  Set both, so that we get the benefit of
+an updated PATH while in SoftEnv, but then can make a sane one later.  No,
+NEW_PATH won't work at all, since the external globus stuff won't set it.
+
+Hm.
+
+Another method is to tack on some very non-path value before the init
+value, like:
+
+  ${PATH}:/SOFT_INIT:/bin/usr/bin/usr/local/bin
+
+so that it is very easy to remove later.  
+
+Ok, I'm saying that it is ok for globus to do whatever it wants.  If you're
+willing to put in a source command, be ready for whatever it might do.  And
+I will put in the SOFT_INIT into PATH as a placeholder, so I can remove it
+at the end.
+
+
+29 August 2002 - Alan
+
+Thinking about some sort of conditional for macros.  The only issue is that
+macros are currently simplistic, they are just expanded to the list of
+keywords early in soft-msc.
+
+So I can muck with the dealing in soft-msc to also deal with the
+architectures.  Or I can add another field to the instruction object to
+only check for architecture...
+
+Hmm, and recursive macros will have issues... I'll need to add smarter
+resolving of macros.  I can't dictate that only the top one is listened to.
+
+resolve_macro:
+  if there is an arch (or more), loop over them, or just loop over ""
+    get keywords
+    for a macro, do resolve_macro (we will need to pass thru the current
+      list of arches, or "")
+    for a keyword, add it with the correct arch and conditional.
+
+Then, if the recursive macros do not have a common subset, nothing is done.
+
+OR (now next day)
+
+When resolving the macro, at each step add the correct $arch variable to
+the object.  one or more if necessary.
+
+so @tg-base-apps becomes essentially:
+
+if ARCH = linux-tg then (if FOO = <other_cond> then @tg-base-apps)
+
+So fill in the arch variable.  Then we do depth first search, and retrieve
+the keys in the order.  Always have a list of the arches that we're
+allowing, each macro defintion will prune the list down more (or won't at
+all usually)
+
+Then when a keyword is found, put in the correct conditional, and then a
+code object for each architecture.  These will get translated into regular
+ol' if statements later.
+
+(I could also allow this syntax for keywords, to define only what
+architectures it will affect, so [] might be defined only as linux-*)
+
+Yay.
+
+Changes in:
+
+  resolve_macro_pass_2
+  read_database
+  new_inst
+  pass2 execution
+  the two calls to new_inst
+
+
+7 May 2000 -Alan
+
+I really need to update this file more often.
+
+anyways, the changes I've made are in the CHANGES file.  They are all
+going to be in the 1.3.0 release.  Better code overall.  good stuff.
+
+28 February 2000  -Alan
+
+well, decided to get started on a next version of SoftEnv, check the
+CHANGES file for information.  biggest change is soft-dbq:
+
+takes ONE argument
+if macro, displays in a list the keywords and macros included in it.
+if keyword:
+  if -a <arch> is used:
+    only values for that architecture are used, including all econs
+  if no options:
+    all arches and econs used
+
+display order:
+  resolve pointers to the real thing
+  all env variable changes - append and set
+  commands - in order they should be executed
+  
+
+
+23 December 1999  -Alan
+
+thinking about initialize stuff...want to make it use a regular keyword,
+really.  I think the addition of an ordered flag would be the best.  Then
+if that flag exists when it is being parsed, push a number onto the
+front...00, 01...  the only problem is with default.  Hmm, ok an order
+value in the database, at the same level as the env variables, then the
+default order is done first, then each architecture is done...works!
+
+or i might not do that...it shouldn't be that hard
+but this ordering stuff might be useful in the future, not sure
+
+22 December 1999  -Alan
+
+Finally figured out the best way to do soft delete so it works everywhere
+all the time with every keyword...
+
+print "setenv $var \`echo \$\{$var\} | sed -e \'s+.\*+\:\&\:+g\' -e \"s#\\\$\{SOFT_REMOVE\}#@@@#g\" | sed -e \'s+\:@@@\[\:@@@\]\*\:+\:+g\' | sed -e \'s+\^\:++\' -e \'s+\:\$++\' -e \"s#@@@#\$\{SOFT_REMOVE\}#g\" \` \; \n";
+
+whew...stupid sed, apparently gnu sed on linux is good :)
+
+20 December 1999  -Alan
+
+doing lots of superficial changes, sending out email soon
+Making sure things are sane with respect to the distribution
+
+8 December 1999  -Alan
+
+Wow, haven't added to this in a while.  ummm, added the 'soft add' related
+stuff, with a new program soft-dec, dynamic environment change.
+made resoft work with no path at all present.  minor changes.
+
+26 October 1999  -Alan
+
+ok thinking about the testing after created
+
+20 October 1999  -Alan
+
+at argonne...testing and thinking about the ideas in the email
+
+I'm not sure at what stage the admin would want to test the new insertion
+into the database.  There is always the soft-msd -n check
+
+As for checking at login time, the admin could always do it then with the
+new key, check it by logging in, and then take it back if necessary...it
+wouldn't lose much time.
+
+Plus, most of the time as long as the path is correct, then eveyrthing
+will work just dandy.
+
+next topic....
+
+I think this is a good idea, and the best way is to have a backup of the
+soft.db file...
+
+actually, new point....would it be esaier to have the update from the
+soft.db file or soft.dbc file...soft.db would make more sense
+readingwise...but actually, if there is gonna be a file to detect the
+changes, then that executable could change the format of the dbc file.
+
+then each change would be easy to document
+
+i think i'll work on that right now....
+
+16 October 1999  -Alan
+
+r'm installed on seki, dawg, and lotus.  softenv-0.9.5 is running fine.
+The only prbolesm were that it doesn't know where the softenv.config.pl
+file is and the dumpenv thing that i made wrong, but fixed.
+
+
+9 October 1999  -Alan
+
+working on make-auto-db....the database is fine.
+
+8 October 1999  -Alan
+
+Finished the sed magic for both shells! :) wheee!
+
+almost finished.  
+
+tomorrow will take a last look at the databases to make sure they're sane
+make sure the man pages work when installed
+and finish up bits of documentation
+and check the `tail -1` stuff
+
+then hopefully install by the end of the day
+
+early october 1999
+
+worked on the sed stuff to extract vars
+
+
+30  -Alan
+
+sleeping roommate...not typing much
+
+i've made it handle full ~fs well
+for both .soft and .soft.cache*
+
+it's purty good
+work on documentation some more
+
+28 September 1999  -Alan
+
+hmmm, thinking about what happens when there is a full home filesystem
+it appears that the print statement doesn't even pop back an error when it
+can't print it.  
+hmmm, and what if soft-msc can't print to the cache in the middle of
+printing.
+
+ok i got something orking....it uses `tail -1` though...
+
+but it will check for it, hopefully.
+
+25 September 1999  -Alan  -second mission
+
+added to the docs a whole lot, fixed the default econ mess in soft-msd,
+that's about it.  the docs are almost done.
+
+I also updated softenv to account for the new soft.dbc style of ENV.
+
+Anyways, that's about it
+
+25 September 1999  -Alan
+
+hmmmmmmmmmmmmmmmm
+
+little problem with econs...
+
+  [] {
+     NNTPSERVER milo.mcs.anl.gov
+  }
+  [ (BLAH=FOO)] {
+     NNTPSERVER milo.mcs.anl.gov   
+  }
+  [irix-6] {
+     NNTPSERVER milo.mcs.anl.gov
+     LM_LICENSE_FILE /var/flexlm/license_glacier.dat:/var/flexlm/license.dat
+  }
+  [irix-6 (HOST=lemon)] {
+     BLAH FOO
+  }
+  [irix-6 (HOST=yukon)] {
+     BLAH BAR
+  }
+
+if the default has an econ with it at the same time an arch has it...bad
+stuff
+
+hmmmm, thinking about this....
+
+ok, if a certain arch has econs associated with it, then it ignores the
+default econs too.  Sounds like a plan, or else why would you define econs
+for the arch.  
+
+This also goes with the theory that if something is defined for an arch,
+then the default is ignored...
+ok, now just to code this down...
+ok, did it...I might have to think about this some more...ask remy...
+I know this probably won't happen very much, but hmmm...
+
+It still accepts the default ones that have NO-ECON, which is probably the
+right thing
+
+
+19 September 1999  -Alan
+
+made softenv-load.csh and softenv-load.sh exactly logically similar.  
+
+did buttloads of documentation...softenv-intro has a good start.
+softenv-code has the whole section on removes in there...softenv-admin
+looks neater or something, replaced the old remove stuff with new remove
+stuff
+
+I have a new idea too...i think it might be good to have an if statement
+also have a != sign too...it would fix that one problem i think that i
+mentioned before...will think about that some..
+
+17 September 1999  -Alan
+
+rewrote most of softenv-load.sh, and made it identical to
+softenv-load.csh, in function, that is...
+
+added error codes and made it unhardcoded...
+
+Considering changing softenv-load.csh by taking out goto statements and
+doing it all with if statements like softenv-load.sh
+
+commented softenv-load.* coreectly...
+
+still thinking...
+
+15 September - 16 September 1999  -Alan
+
+worked out the instlal/make/build process r'm designed for the softenv
+work...finally understand how it all works
+
+11 September - 14 September 1999  -Alan
+
+did a lot of random work on the documentation...
+
+9 September 1999  -Alan
+
+made the part work where the default arch has econs..., going to fix the
+dumpenv to not do anythign if there's nothing in %env
+
+ok dumpenv is good now...i've added a lot to softenv-code.pod about
+soft-msc...need to think about what to do about other ones
+
+8 September 1999  -Alan
+
+made indentations work...looks nice...i have to figure what to do with
+comments and linenum stuff, in order to make it look nice, hmmm
+
+got rid of all old remove stuff...pass2.5 is no more
+
+tomorrow or whenever: comments and linenum, test econ stuff a lot
+esp. the case where the default arch has an econ...i don't know if it will
+be parsed right or if it will be put into hash correctly, dance a jig,
+update the docs a lot!
+
+i'm waiting to updae the docs when my typing won't annoy my sleeping
+roommate...make sure they look nice too
+
+7 September 1999  -Alan
+
+ok, fixed up the econ stuff...it works perfectly now...i hope, but ya never
+know...
+
+went back to fix some of the stuff with initialize...it appears it is
+better to put the initvar instructions before the initenv, because uname
+depends on the path, actually, no, whatami depends on uname being in the
+path
+
+
+
+5 September 1999  -Alan
+
+The %econs hash is changing to this format:
+
+$econs{$keyword}{$arch}{"$econ:operation"}
+
+basically because i find myself needing to search by arch, and i can't if
+it is hidden inside the key of the outer hash...
+
+ok cool
+
+I got the dumpenvs thrown in during pass3 right before it detects a
+keyword with econs...then in pass4, i've got it to go to a routine if it's
+an add with an econ...good deal...just need to write the routine for that,
+which involves throwing a lot of shit into the instruction stream:
+
+switch on architecture
+  econif BLAH=BLAH      #starts it up with an if
+  set blah blah
+  append blah blah
+  set blah blah
+  moreeconif BLAH=BLAH   #continues it with an elif   
+  set blah blah
+  append blah blah
+  lasteconif BLAH=BLAH   #ends if with an else
+  set BLAHbalhlah
+  endeconif              #and finally the endif
+next architecture
+...
+next architecture
+...
+next architecture
+endswitch
+
+
+2-3 September 1999  -Alan
+
+Hmmm, it looks like in pass3, when an add is hit, it will check if it has
+any econs associated with it.  If it does, throw in a dumpenv and then all
+the necessary pass3cmmands for econs...i'm trying not to put in a pass4.5,
+which will make it cleaner...then you don't need a dumpenv on the end
+either, because there will be nothing to dumpenv!
+
+I still need to think about how to store the econs in the big db hash...
+thinking about that now...I don't want to make it multidimensional more
+than it is, but i might....
+actually, i'm considerig a whole nother hash for the econs...might make it
+easier...
+$db{"V:$arch:$key"}{$variable} = $value
+
+
+Nope, I'm going with making the hash more multidimensional, since it is
+just used ...nah wait a minute, that's a lot of extra memory...
+
+nope
+making a seperate hash...jsut for the keywords that have econs...because
+the vast majority don't...
+
+so..
+$econs{"V:$arch:$key"}{$econ}{$variable} = $value
+
+%econs is the hash...
+$arch, $key make sense...
+then each of those has a hash for each econ, including NO-ECON
+then that has a hash of variables...
+good!...hmm...i'll work till 2:35 and chalk up an hour...
+
+that also means i'm changing around the %db again...won't have the econs in
+yet...
+
+alan-remember to change the csh style commands to sh style
+besides that..play around with pass4commands...make new ones...
+
+
+
+1 September 1999  -Alan
+
+Hmmm, well, i've got most of the soft-msd portion of econs put into place
+I have to look, i know i stil have to do the ordering, but now that i've
+gotten the basics in there, that addition should be simple.
+i'm gonna checkin stuff right now...soft-msd and soft-msc
+and this file....
+
+
+30 August 1999  -Alan
+
+Ok, well i've decided to just go with one removal per line, i.e:
+  @remove +gcc-2.5
+
+instead of being able to do this:
+  @remove +gcc-2.5 +totalview-1.2 +matlab-9.9.9
+
+the reasons for this are that the op1 and op2 are the only operators
+
+nope, scratch that, i'm going with multiple ones per line, i'm just saving
+all of them in one string, which makes it easier, it will also make
+removing macros easier, which is nice.
+
+
+13 August 1999  -r'm
+
+  Econs
+  -----
+  Econs are "environment variable conditionals", with the first part of
+  them having been started in the %initialize code.
+
+  Here's the thinking on Econs.
+
+  The syntax in the soft.db is:
+  +totalview {
+    [linux] {
+      PATH /foo
+    }
+    [irix] {
+      PATH /bar
+    }
+    [irix (HOST=denali)] {
+      PATH /barden
+    }
+    [irix (UNAME=irix64)] {
+      PATH /bar64
+    }
+  }
+
+  We state that we will use the first comparison that matches - order
+  is important.  If none of them match, then the case without an econ
+  will be taken.  I.e. on denali, we get /barden.  On tundra, we get
+  /bar64.  On lemon, we get /bar.
+
+  Furthermore, we only support the = operation on comparisons.
+
+  These translate into the dbc like this:
+
+    ENV:+totalview:linux:NO-ECON:PATH->/foo
+    ENV:+totalview:irix:E1-HOST=denali:PATH->/barden
+    ENV:+totalview:irix:E2-UNAME=irix64:PATH->/bar64
+
+  The "E1" bit is so that we can preserve order (by sorting) when pulling
+  out of the hash.
+
+  Magic happens.
+
+  Then, in the .soft.cache.*, we'd go in this order:
+
+  <environment up to the key before +totalview>
+  case $ARCH in 
+    linux)
+      {PATH=/foo}
+      ;;
+    irix)
+      if [ HOST = denali ]; then
+        {PATH=/barden}
+      elif [ UNAME = IRIX64 ]; then
+        {PATH=/bar64}
+      else
+        {PATH=/foo}
+      fi
+      ;;
+  esac
+
+  Noting that insideof each of those {PATH} areas, we might actually
+  be setting multiple variables, if there had been more in the .db file.
+
+  This will require running through the keys and looking for those with
+  econs on them, and doing a dumpenv before and after each econ.
+
+  
+
+
+
+  Removes
+  -------
+  Ok, after much white board delibaration and brain hurting, we've come
+  up with an easier way of handling removes that gets us the functionality
+  we need with the complexity.
+
+  1. Removes aren't supported in the software database - only in the 
+     user's .soft file.
+  2. No -keys
+  3. To remove something, one puts, in their .software file, this line:
+       @remove +key
+     This has the effect of removing all instances of key1  in all 
+     macros that follow the @remove command in the .soft file.  It 
+     does not effect  specific references to +key1 in their file, 
+     only to those  that are included via macros.
+  4. You can have multiple @removes.  They affect the macros that follow
+     them.
+
+  We'll implement this by looking for the @removes in the first pass,
+  and then ripping out the keys in the macros as they are expanded.  Thus
+  the key never gets into instruction stream.
+
+  Alan will do this, update the pods, and clean up the old removal code.
+
+
+
+08 August 1999  -Alan
+  urgh
+  I realized that my previous timing test were false.  Basically, I forgot
+  to account for this:
+    if ($?PATH) then 
+      setenv PATH ${PATH}:...
+    else 
+      setenv PATH ...
+  The if statements add a lot of time into the program, and I forgot to
+  test that...durn.  anyways, there are two things that can happen because
+  of this... There can either be made some way to account for this in the
+  perl script, and only do 'setenv PATH ...' for the first set
+  encountered, and append it on for the rest of the additions.  Or...,
+  this could be used to show that the individual variable setting is too
+  slow and we should go back to ONE BIG SETENV.
+
+  This also makes me think if there isn't some way to do both the big path
+  setting and small additions when necessary...ie, you could set all the
+  ones you know, and after that, set all the conditional ones to append to
+  that.
+
+  As would be expected, the timings of the styles of .soft.cache.csh
+  are like that also.  Both styles that utilize individual sets are
+  equally slow, while the big variable settings take considerably less
+  than that.
+
+03 August 1999  -Alan
+  Podified all of the docs in doc/
+  Created the makefile for the doc/ directory
+  Made sure the resulting man pages and html pages were sane
+  Commented the %initialize parts of soft-msc and soft-msd and other stuff
+    that didn't make sense - made sure i knew what everything did
+  Added a -d option to make-auto-db
+  Considered doing it to softenv, but realized it's pointless
+
+02 August 1999  -Alan
+  Implemented %initialize code in soft-msd and soft-msc.  It appears to
+  work just dandy.  Thought about the linenum stuff, which appears to be
+  setup strangely right now.  I did use the INITIALIZE:1:WHATAMI stuff to
+  differentiate between which set wants to run first.  Even if it isn't 
+  necessary, it's still nice to have in the future.
+
+  off to document stuff and comment some things...
+
+
+29 July 1999
+  Alan worked on softenv this week and added:
+    make-auto-db 
+    softenv
+
+  We talked about the two major pieces of work left to do:  removals
+  and conditional variable setting.  Based on that conversation, I'm
+  now rethinking the format of the .soft.cache files... perhaps we
+  should make them less compact but easier to write, essentially
+  ditching the 'env' concept in soft-msc.  Exploring that now.  One
+  thing we'll need is the %initialize special keyword in soft.db.
+
+  What it will take to implement %initialize:
+  1. soft-msd needs to parse it, try to handle any errors, and turn 
+     in into soft.dbc INITIALIZE keys, ad described in softenv-admin.pod
+  2. soft-msc needs to:
+    a) in read_database(), parse the INITIALIZE keys, storing them in 
+       a %initialize global hash (which will need to be qw'd up top).
+    b) the initialize sh and csh code, which is set down in set_sh_code
+       and set_csh_code will need to be modified to handle a variable
+       number of initialization lines.  This may require adding a new
+       "sh_code" - one for "initvar" and one for "initialize", where
+       the "initialize" would still handle the current job of zeroing
+       out PATH and MANPATH, while the "initvar" one would be called
+       for each variable to initialize.
+    c) pass5 actually works just fine the way it is, even though it's
+       the thing that builds the shell code.  instead of modifying that,
+       i'd:
+    d) in pass3, where 'initenv' is put in the instruction stream, 
+       i'd add an 'initvar' instruction for each variable needing to
+       be added, with op1 set to the variable and op2 set to the value 
+       to set it to.  Then make sure pass4 and pass5 can handle the 
+       'initvar' instruction, and it should get correctly translated 
+       by pass5.
+  3. Test it by running soft-msc in debug mode.
+
+  Hm.  Just realized there's a tricky bit in this.  These variables
+  should be initialized in the order that they're listed in soft.db.
+  This is important because ARCH depends on WHATAMI.  But in the process
+  of putting them in soft.dbc, we ordering information.  Perhaps the
+  order should be encoded into soft.dbc, i.e.
+    INITIALIZE:1:WHATAMI->`/bin/whatami`
+    INITIALIZE:2:ARCH->$WHATAMI
+  or something.  That changes a little bit above, but not too much. 
+  If we have to do this, remember to update softenv-admin.pod.
+
+
+22 July 1999
+  We need a way to say that on IRIX (or others later) some path is
+  the default for a keyword but to go with other values if on a 64-bit
+  machine.  This could be generalized to be based on any environment
+  variable value, and then set ARCH_SIZE in the global tcshrc or at
+  the top of the .soft.cache (better idea).
+
+  Syntax and implementation are both wide open.
+
+  Worked with Gene and Sandra to clean up the .software-beta db
+  and encode it into the new one.  Need to:
+   1. fix syntax on new one
+   2. Clean up sun4 legacy db and directory
+   3. Add the conditional key mentioned above
+   4. Think hard about the "default value" as mentioned in totalview
+      and how it relates to what pkg can do.
+
+
+20 July 99
+  Added some basic error checking to soft-msd, and got all the removal
+  keywords working. The strategy for now is to use a small database to
+  test removals and so on with soft-msc and then, when soft-msc is
+  happy, to finish the big database conversion over to the new format.
+
+  Next: to check the output of the database, which looks right at
+  first glance, and to start on soft-msc.
+
+14 July 99
+ Changed the syntax of the keys in the .db.  Didn't test it.  Should
+ be okay.  Now working on syntax of removal keys in the db... not sure 
+ how best to do this.
+
+
+13 July 99
+Trying to figure out where I am.  Notes:
+ 0.9 is installed in /software/
+ 0.9.1 is what I'm working on in ~/proj/softenv
+ Removals sort of in but not quite... lots of loose ends.
+ I think that at this point I want to do this:
+   Get soft-msd and the database completely solid.
+   Then get soft-msc working from this, possibly cutting out features
+    in order to get an installable version.
+   Test these in my home directory, developing a test suite of .soft
+    files and desired output.
+
+ And:  soft-msd now reads multiple files, and ignores any repeated
+  definitions of macros of applications.  This has been tested a little
+  but not extensively.
+
+12 Jul 99
+  soft-msd needs to implement the db inclusion code.  It looks somewhat
+  hairy.  Probably the best way to do them is to add them to a global 
+  array that the 'read databases' routine looks for, and then does 
+  a read on _after_ finishing all  current reads.
+
+22 Mar 99
+  Basic removals are working.
+  Now at pass4 mods, putting in 'unset' and 'unappend'.
+
+  Soft can't keep the following things from happening:
+   - Macros that include and then uninclude the same keywords will still
+     have those keywords included if those macros are inside a conditional.
+   - Removals inside a conditional that take out the value set by some
+     other keyword through environment variable name collision.
+  Document this!
+
+  To actually remove a keyword:
+    For each envvar it sets:
+      If the envar is accumulated:
+        Put in an 'unappend var sep' cmd - the sed script
+      Otherwise
+        put in a 'unset var' cmd - either an unset or = ''
+
+17 Mar 99
+  To implement -key:
+    Put a -key on soft.db, figure out syntax.
+    Modify soft-msd to read the -key and add an entry to soft.dbc,
+      S:+key1:-key2
+    Modify soft-msc to read the S entry, and then:
+      In pass 2.5:
+        If key1 is not in a conditional, add key2 to the list of keys to
+          subtract.  After reading all keys, then go through the list and
+          remove all subtractable keys.
+        If key1 is in a conditional then insert a sub key2 opcode into
+          the stream right after the conditional add, with the same
+          conditions.    
+      In pass 3:
+         put a sub in for the conditional sub, and make sure it goes
+         before the add (and dumpenv) that will be inserted.
+      In pass 4:
+         put a 'remove VAR val' in for each spot where there would be
+           an append
+         put a 'unset VAR' in for each spot where there would be a set
+      In pass 5:
+         insert the code
+
+  Started coding this into soft-msc.
+
+23 Feb 99
+  Figured out how to use sed to remove path elements.   So presumably
+  I could put code into .software to do element subtraction at runtime.
+  Then I would do that code for accumlators, and just unset the variable
+  if it's not an accumulation.
+
+  Most likely would still do environment removal if it's all non-conditional,
+  and if any subs are in conditionals, then insert a sub command inside
+  that conditional clause, before the related add.  Yeah, that would work.
+
+22 Feb 99
+  Working on the -key stuff.  See admin.pod for some thoughts on what
+  I'm doing.  The basics are quite simple, but when you include
+  conditionals, it gets really ugly, in part because soft-msc assumes
+  that it's only ever one level of conditional deep, so inserting new
+  conditionals just bombs.
+
+  Possibly should just punt and say subs happen irregardless of 
+  conditional level.
+
+  Decided later that subs should only happen if they're not in
+  conditionals.  It makes coding easier.
+
+
+16 Feb 99
+  Renaming to SoftEnv.
+  Pulling it out of configure, which is in the way, really.
+
+
+16 Feb 99
+  Got it working.  Needs LOTS of testing and the db needs work, probably.
+
+  To do lists moved to todo.txt
+
+  Thinking there should be a "public" and "non-public" flag for keys,
+  or something, for the 'software' command.
+
+15 Feb 99
+  Open question at the moment - who figures out what with respect to the
+  default architecture in the software database and how does that relate
+  to the "default" architecture built by msc?  Need to figure that out,
+  then finish keyword parsing, then we're all set for building a real db.
+
+  Okay, this default architecture thing is tricky, but I think I know
+  what I want to do.
+
+  Let's say a keyword has different values in the database for different
+  architectures.  Then in the cache, it should be translated into a 
+  switch on architectures with the exact values being put into those 
+  switches.
+  If there is only a default value, then it doesn't require a switch.
+  This means that the 'add collapsing' done in soft-msc should be undone,
+  because if you collapse two adds that affect different architectures
+  then you'll miss some of the environments.
+
+  I.e. if you have:
+    @default "" {+foo +bar}
+    +foo "" { [] FOO foo }
+    +bar "" { [sun4] BAR bar }
+
+  this would translate it into:
+    switch $ARCH
+      case sun4)
+        setenv BAR bar
+        ;;
+     *)
+        setenv FOO foo
+        ;;
+     endswitch
+
+  Meaning that on a sun4, you wouldn't get the FOO.  One fix would be to
+  add FOO to all environments, since it was in the default. But then you
+  need it for all archs, so the switch would be:
+    switch $ARCH
+      case sun4)
+        setenv BAR bar
+        setenv FOO foo
+        ;;
+      case irix)
+        setenv FOO foo
+        ;;
+      ..
+      *)
+        setenv FOO foo
+        ;;
+     endswitch
+
+  This will get long and result in some fairly massive db bloat.  That
+  may be the right thing to do, but a more intuitive feel for how things
+  work follows better from a direct translation of the db into the 
+  switch format.
+
+  Okay, screw it, I'm going for the bloat strategy because I think I
+  can make it work quickly.
+
+  ----
+
+  Here's where I am - I'm trying to debug the env stuff on a very small
+  test db.  Somewhere in keyword parsing, things are working.  Might
+  be the archenv ref.  Once that works, it's a simple matter of adding
+  the env printing code.
+  
+
+12 Jan 99
+
+The to do list at this point, trying to get back in sync with the project:
++	Rename software-env.csh to soft-env.csh.
++	Rename msc to soft-msc in everything.
++	Put soft-msd in everything.
++	soft-msd
++	   need to finish the parse keywords
++	   clean db dump with errors
++	   better parsing of db, warning about mistakes, see ones that exist
++	soft-msc:
++	   Change database format to fix !, - and $$.
++	   Change database format to include the A string and U strings.
++	   Fix the other script to fix the database formats.
++	   Document the database formats.
++	   Handle or at least flag unrecognized keys.
++	Tackle the actual database contents.
++	Figure out the auto db stuff.
++	Complete docs/software-admin.pod.
+	  Introduction
+	    Motivation
+	    Issues
+	  Basic overview
+	  The login process
+	  The software database
+	  The components
++	Complete docs/software-intro.pod.
+	  Why to use .soft
+	  The commands and the files
+	  The contents of .soft
+	  How you would typically use it
+	  More information
++	Manual pages for each program and each file.
+
+Made good process on the admin manual as part of trying to figure out where
+I am.  Next step - get test environment working again to figure out db issues.
+Finish db code and contents, then work on transition strategy.
+
+
+21 Oct 98
+  Spent all morning on make-sw-cache.  I think it's working now, but
+  it's really ugly code.  It feels very rigid, and the cache file
+  is built in a fairly wacky way.  It needs to be rebuilt using
+  compiler technology if anything else is going to be done to it.
+  Not sure if this is actually a good use of time.
+
+20 Oct 98
+  Tried to get the new system working on timewalk.  The tcshrc is
+  working, and I rewrote software-env.csh and am pretty happy with
+  that.  For some reason, make-sw-cache is making a very bogus
+  cache file, and haven't even started to debug that.  That's
+  next.
+
+  Todo:  push new tcshrc to all machines
+         fix software-env.sh some day
+
+13 Oct 98
+  Merging things.  A bit messy, as there are multiple versions of this
+  around.
+
+  In CVS, assigned the tag "software-5-01" to the version that Joe
+  released and is currently installed in MCS.
+
+  Created the shells/ subdirectory, and got a working csh.cshrc for linux.
+  Tested it... installed on timewalk.  It's ready to go for building
+  and testing on timewalk now.
+  Wrote a new sun4 one, but have NOT tested it.
+
+  Made these assumptions:
+   a ~/.nosoft means "don't use .software", implemented in tcshrc
+   the shell sets a nice default path before calling .software
+   the shell decides between .soft, .software-beta, and .software
+   
+
+
+12 Oct 98
+
+Time to start this in a real way.  Initial plans are:
+  Merge all these changes into one repository.
+  Update to version 5.1
+  Set up a test environment on timewalk, using .soft so it doesn't
+    interfere with other stuff.
+  Document the entire process for admins.
+  Document the entire process for users.
+
+
+===========================================================================
+
+
+24 Aug 98
+
+Okay, starting to get on top of this again.  Here's the state.
+
+Files
+-----
+Files are sort of documented in design/components.txt.
+
+Code
+----
+Over the course of the last several months, I've made minor mods to Joe's
+code.  I haven't tested all of it (particularly the auto-db stuff).
+
+It all needs to be modularized, and I'm honestly not sure I like using
+the configure system on it.
+
+Databases
+---------
+I've rebuilt the sw.db substantialloy and seriously cleaned it up.  However,
+since I started that (May 98), the "real" sw.db has changed, so I'm a bit
+behind.  This will need to be fixed.
+
+Docs
+----
+Docs desperatelyi need to be written for the admins on how to use it.
+
+Usage
+-----
+This is the thing I'm blocking on.  I'm not sure if people really should
+be using application keys in their .software - it just doesn't feel right.
+
+Moving Forward
+--------------
+I need to build and test with the mods I've made, install on a real
+machine, and compare the effects of the database changes.  Then it
+needs to go in for real, but should it go in with .software or .software-beta,
+or perhaps .soft?  
+
+Essentially I think this should go in and then we sweep through all of 
+the users and help them clean up.
+

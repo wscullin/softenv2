@@ -1,0 +1,280 @@
+#!/usr/bin/perl -w
+#
+# Substitutes one string for another in a set of files
+#
+#   $Id: install-N-sub,v 1.3 2007/03/12 17:21:41 navarro Exp $
+#
+# ================================================================
+#
+# Description:
+#
+#   This program substitutes one string for another string in a
+# set of files.  What to substitute is based on the first argument
+# to the program.  The rest of the arguments are files on which to 
+# do the substitution.
+#
+# ================================================================
+# 
+#   Substitution Code by: 
+#	Alan Bailey, bailey@mcs.anl.gov
+#
+#   Other constributors:
+#	Brian Elliott Finley <finley@mcs.anl.gov>	(2003.05.12)
+#       JP Navarro <navarro@mcs.anl.gov>                (2007.03.12)
+#
+# ================================================================
+# 
+
+use strict;
+use Getopt::Long;
+use File::Basename;
+use File::Copy;
+use File::Path;
+
+(my $program = $0) =~ s:.*/::;
+my $VERSION = "0.1.2";
+
+# set version information
+my $version_info = <<"EOF";
+$program v$VERSION
+EOF
+
+# set help information
+my $help_info = $version_info . <<"EOF";
+
+Usage: $program --config FILE [OPTION]... FILE...
+
+    If --install and --dest are not specified, substitutions are applied
+    to FILE(s) directly.
+
+    If --install and --dest are specified, then FILE(s) are left alone 
+    where they reside, and substitutions are only made to the copies of
+    FILE(s) as they are being installed.
+
+Options: (options can be presented in any order)
+
+ --help             Display this output.
+ --version          Display version and copyright information.
+ --config FILE      Substitution configuration file.  Format is:
+                
+                        KEY_STRING  what_to_put_in_it's_place
+
+ --install 'ARGS'   Arguments to be passed to the install program.  
+                    Example: --install '-m 755'
+                    See \"man install\" for details.
+ 
+ --dest [FILE|DIR]  Destination file or directory name.
+
+EOF
+
+# interpret command line options
+GetOptions(
+    "help"        => \my $help,
+    "version"     => \my $version,
+    "config=s"    => \my $config_file,
+    "install=s"   => \my $install_args,
+    "dest=s"      => \my $dest,
+) or die qq($help_info);
+
+# if requested, print help information
+if($help) {
+    print qq($help_info);
+    exit 0;
+}
+
+# if requested, print version and copyright information
+if($version) {
+    print qq($version_info);
+    exit 0;
+}
+
+# if requested, print version and copyright information
+if(!$config_file) {
+    print qq($help_info);
+    exit 1;
+}
+
+# install and dest must both be specified, or we conservatively exit.
+if(($install_args) and (!$dest)) {
+    print qq($help_info);
+    exit 1;
+}
+if(($dest) and (!$install_args)) {
+    print qq($help_info);
+    exit 1;
+}
+
+my @files = @ARGV;
+
+if(! -r $config_file) {
+    die "$program: Cannot read $config_file\n";
+}
+
+my %subs = parse_config_file($config_file);
+
+if(($dest) and ($install_args)) {
+
+    my @tmp_files;
+    my $tmp_dir = "/tmp/.$program.$$";
+
+    if((! -d $dest) and (@files > 1)) {
+        print "FATAL:  You have multiple source files, but have specified one of the\n";
+        print "        following as your destination:\n";
+        print "          - a non-existent destination directory\n";
+        print "          - a single destination file\n";
+        exit 1;
+    }
+
+    foreach my $file (@files) {
+        #
+        # get list of tmp file names
+        #
+        my $tmp_file = $tmp_dir . "/" . $file;
+        push @tmp_files, $tmp_file;
+
+        #
+        # copy files into tmp dir
+        #
+        my $tmp_path = dirname($tmp_file);
+        eval { mkpath($tmp_path) };
+            if ($@) {
+                print "Couldn't create $tmp_path $@";
+            }
+        copy($file, $tmp_path) or die("Couldn't copy $file to $tmp_path!");
+    }
+
+    #
+    # Do substitutions on the tmp_files
+    #
+    run_through_files(@tmp_files);
+
+    my $install_cmd = 'install';
+    my $which = `which installbsd 2>&1`;
+    if ($which =~ /^\//) {
+        chomp ($install_cmd = $which);
+        $install_args .= " -o " . getlogin();
+        my $gid = (split(/ /, $)))[0];
+        my $gname = (getgrgid($gid))[0];
+        $install_args .= " -g " . $gname;
+    }
+        
+    foreach my $tmp_file (@tmp_files) {
+        #
+        # install file(s)
+        #
+        my $cmd = "$install_cmd $install_args $tmp_file $dest";
+        !system($cmd) or die "$cmd failed!";
+    }
+
+    rmtree($tmp_dir);
+   
+} else {
+    #
+    # Do substitutions in place on source files.
+    #
+    run_through_files(@files);
+}
+
+exit(0);
+
+
+################################################################################
+#
+# Subroutines
+#
+################################################################################
+
+#
+# Take each file, run substitutions on each line of the file,
+# and writes the file back.
+#
+# Usage: run_through_files(@files);
+sub run_through_files {
+    
+    my @files = @_;
+    
+    my($write_it, $error);
+    
+    foreach my $file (@files) {
+        $write_it = $error = 0;
+        
+        # Skip this file if it's not a text file.
+        if(! -T $file) {
+            print "$program skipping $file -- not text.\n";
+            next;
+        }
+        
+        # Suck in this file...
+        open OLDFILE, "<$file" || die "$program: Cannot open $file";
+            my @lines = <OLDFILE>;
+        close OLDFILE;
+        
+        # Check for matches
+        foreach (@lines) {
+            foreach my $string (keys %subs) {
+                if(s/$string/$subs{$string}/g) {
+                    $write_it = 1;
+                }
+            }
+        }
+        
+        # Write it if we need to.
+        if($write_it) {
+            open NEWFILE, ">$file" || die "$program: Cannot open $file";
+                foreach (@lines) {
+                    $error = !(print NEWFILE);
+                }
+            close NEWFILE;
+            if($error) {
+                print "Error writing $file\n";
+            } else {
+                print "Updated $file\n";
+            }
+        }
+    
+    }
+}
+
+
+#
+# Parses through the substitution file and puts all of the associations
+# into a hash, %subs
+# 
+# Usage: my %subs = parse_config_file($config_file);
+sub parse_config_file {
+
+    my $file = shift;
+
+    my %subs;
+    my $string;
+    my $substitution;
+
+    open FILE, "<$file" || die "$program: Cannot open $file for reading.";
+        while (<FILE>) {
+            chop;
+            next if (/^\s*\#/);
+            next if (/^\s*$/);
+            
+            if (/^\s*\"/) {
+                s/^\s*\"([^\"]*)\"\s+//;
+                $string = $1;
+            } else {
+                s/^\s*(\S*)\s+//;
+                $string = $1;
+            }
+            
+            if (/^\"/) {
+                s/^\"(.*)\"//;
+                $substitution = $1;
+            } elsif (/^\`/) {
+                s/^\`(.*)\`//;
+                chomp($substitution = `$1`);  # execute it
+            } else {
+                $substitution = $_;
+            }
+            $subs{$string} = $substitution;
+        }
+    close FILE;
+
+    return %subs;
+}

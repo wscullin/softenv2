@@ -1,0 +1,210 @@
+=head1 NAME 
+
+softenv-policy - Policies to adhere to when adding to the database
+
+=head1 DESCRIPTION
+
+There are a few changes that are important enough to be in this document.
+These changes you make to the database should most likely be one of these
+five:
+
+=head2 Things to add
+
+=over
+
+=item *
+
+Adding an application
+
+=item *
+
+Adding an environment for certain users
+
+=item *
+
+Adding a new path to +system, +mcs, or +soft
+
+=item *
+
+Adding a variable to %initialize
+
+=item *
+
+Adding a new variable to +default-environment
+
+=item *
+
+Running commands and sourcing files
+
+=back
+
+=head2 Adding an application
+
+First, it is assumed you have an application or set of applications that
+have not been installed into /usr/local or any other common dir, and you
+want to add this to the SOFTENVRC system.  Usually applications already put
+into /usr/local or similar are already included in the default paths and
+that would just mess things up.
+
+It makes a difference whether this key you want to add is a single
+application with a version number, or if it is a set of applications that
+can be grouped together.  A set of applications would be, for example,
++cave, +adsm, or +demos.  A single application would be something like
++idl-5.2, +jdk-1.1.5, or +maple-5.1.  There are very few instances where
+an application should be added without a version number.
+
+Both of these two additions should be put into the Application section of
+the database, which is at the end of the file, and should be kept in
+alphabetical order.
+
+If you are adding a set of applications, simply do the following:
+
+  (+<apps>) {
+    {desc: "This is <apps>"}
+
+    ...
+    definition
+    ...
+  }
+
+If you are adding a single application, make a key similar to the
+following:
+
+  (+<app>-<version>) {
+    {desc: "This is <app>, version number <version>"}
+    {flags: power}
+
+    ...
+    definition
+    ...
+  }
+
+The flag specifies that "power users" can use this flag in their SOFTENVRC
+file, but regular users probably shouldn't.  
+
+Another feature in defining keys is the use of econs, or environment
+conditionals.  These can be used to further specify programs based on
+other variables besides ARCH.  See the section on the %initialize section
+below for defining variables.  An econ is defined like so:
+
+   [<arch> (<var>=<value>)] {
+     definition
+   }
+
+Therefore, these values are only used on that arch, and also if the
+variable equals the value.  These are very helpful, and should solve a lot
+of problems in defining keys.
+
+Now the key for that specific version has been added. However, it is not
+wise to tell users to use +<app>-<version>.  They should use a key that
+is simply <app>, so that they will always be using the recent version of
+that app.  This is done by adding a key +<app> to the database, and using
+pointers within this definition to define which version of the application
+will be the default. For example:
+
+  (+<app>) {
+    {desc: "This is the default version of <app> on all architectures"}
+
+    [<archlist>] {
+      pointer +<app>-<version>
+    }
+    [<otherarchlist>] {
+      pointer +<app>-<otherversion>
+    }
+
+In this way, this key will take on the values of <app>-<version> for
+the definitions in <archlist>.  This is a very tight correspondence in
+that a pointer will only be resolved if it is defined specifically for
+that arch and econ.  If not, an error will be displayed.  Remember also
+that if there are defaults defined for <app>-<version>, the pointer should
+most likely also point to the defaults.  There are many examples of the
+usage of pointers in the existing database.
+
+You can also create other keys, such as +<app>-beta or +<app>-really-beta
+or +<app>-outdated and point these to the respective version number of the
+application.
+
+Also, with applications installed into the /my directory, a different
+naming scheme should be used.  This scheme is +<app>-<version>-my or
++<app>-my.  This scheme is to differentiate the software installed in
+/my and /soft, which could possibly be the same version.
+
+You should decide whether this application should be placed somewhere in
+@default so that users will get the application, or whether users will
+have to define it themselves.  If it shouldn't be added, do nothing.  If
+it should, add the key +<app> somewhere into the macro
+@default-applications.  The applications should be placed in this macro if
+at all possible.  Note also that this group of applications is placed
+AFTER +mcs and +soft, so /usr/local/bin and similar path will be ahead of
+this application in the $PATH.  This is why keys that are being added to
+the softenv system usually SHOULDN'T be linked into /usr/local/bin.
+
+The order in the macro @default-applications does not matter.  Do whatever
+you think will be best.
+
+=head2 Adding an environment for certain users
+
+If you need to add a key for a set of users, this is the section you
+should read.  Some examples of this are +adm, +adifor, +mml.  There isn't
+much to be said about keys like this, except that they should be placed in
+the file at the correct place.  They should go in the "Paths for specific
+groups of users" section.  Please keep those in alphabetical order.
+
+=head2 Adding a new path to +system, +mcs, or +soft
+
+This should be done only in a few special cases.  These keys are also only
+present to define the PATH and MANPATH.  Only some special cases in the
++system key have definitions for other variables.  For example, if a new
+pkg type 'beta' is defined in the /software heirarchy, then /soft/beta/bin
+and /soft/beta/man can be added to the +soft key.  The same situation
+occurs with +mcs.  If there is a new directory containing programs that
+are needed for MCS users, it should be added to +mcs.
+
+=head2 Adding a variable to %initialize
+
+The %initialize section is used to define variables before the addition of
+variables from the SOFTENVRC file are added into the environment.  The
+initilization of these variables is provided for a few reasons.  First,
+users can use these in conditional statements to customize their
+environment.  Second, administrators can use these variables to define
+econs, or environment conditionals, and actually, this is the only to
+define variables that can be used in econs.
+
+Only add a variable to the architecture that it will be used on.  You can
+base the variables on architecture, but you cannot base them on econs,
+because this is the place where econ variables are defined.
+
+=head2 Adding a new variable to +default-environment
+
+The key +default-environment is used to define environment variables that
+every user should have in their environment.  A few examples of this are
+NNTPSERVER.  This is NOT the place to define the PATH and MANPATH, look at
+the section on +mcs, +soft, and +system above.
+
+=head2 Running commands and sourcing files
+
+Sometimes all of the functionality of initializing an application cannot be
+confined inside of SoftEnv.  There are two features of SoftEnv to utilize
+outside programs and files.
+
+To run an outside command, use the following syntax in an application
+definition:
+
+  command 'command_to_exec'
+
+It can obviously have any arguments along with it.  However, one example
+command that should not be put into a command is to source an external
+file.  This is because SoftEnv is abstracted above sh and csh, and needs to
+handle both file formats.  This should be done with the source command:
+
+  source '/file/to/source'
+
+This will append either .csh or .sh to the path given, and execute that
+file for the respective shell.  This is how a non-shell-specific source
+file is indicated in the database.
+
+=head2 Authors
+
+SoftEnv was created by Remy Evard, designed and developed by Remy Evard and
+Alan Bailey, and includes contributions from others.
+To contact the authors visit http://www.mcs.anl.gov/systems/software/.

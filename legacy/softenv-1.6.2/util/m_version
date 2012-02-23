@@ -1,0 +1,10 @@
+#!/usr/local/bin/perl
+
+while (<>) {
+  chop; 
+  if(/^\s*version:\s*([\d\.\-]+)\s*$/) {
+    $version = $1;
+    print "$version\n";
+    exit(0);
+  }
+}	

@@ -1,0 +1,11 @@
+--- /software/common/adm/bin/softenv    2002-11-16 22:20:00.000000000 -0600
++++ /home/valdes/softenv 2007-01-08 16:21:45.000000000 -0600
+@@ -293,7 +293,7 @@
+ 
+   if ($regexp) {
+     return unless
+-        (($keyname =~ /$regexp/) or ($description =~ /$regexp/));
++        (($keyname =~ /$regexp/i) or ($description =~ /$regexp/i));
+   }
+   return if ($db{"FLAGS"}{$keyname} =~ /hide/);
+   $uflag = "U" if ($db{"FLAGS"}{$keyname} =~ /useful/);

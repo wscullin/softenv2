@@ -1,0 +1,15 @@
+#!/bin/sh
+#
+
+if [ "$#" -ne "2" ]; then
+  echo "usage: ship package version"
+  exit 0
+fi
+
+PROG=$1
+VER=$2
+NAME=${PROG}-${VER}
+
+rm -rf $NAME
+mv new $NAME
+tar cvf - $NAME | gzip > $NAME.tar.gz

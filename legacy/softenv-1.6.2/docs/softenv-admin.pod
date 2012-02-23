@@ -1,0 +1,1291 @@
+=head1 NAME 
+
+softenv-admin - The administrator's manual for the softenv system
+
+=head1 DESCRIPTION
+
+=head2 Introduction
+
+The SoftEnv package is a set of scripts used to help set up a user's
+environment which includes the user's PATH, MANPATH, and other environment
+variables.  SoftEnv is designed for large complex computing systems with
+many software packages installed, but may be useful on smaller systems.  It
+can be used on any type of Unix system.
+
+=head2 A Brief Overview of SoftEnv
+
+Traditionally, the user's environment is set up in the user's shell startup
+files such as their .cshrc or .profile.  It turns out that it's fairly
+difficult for a user to set their PATH correctly when the computing
+environment is large or changes frequently.  They typically just want their
+path to just do the right thing in order to be able to access LaTeX or
+emacs, but will often have to learn the arcane details of the default path
+settings on Solaris versus IRIX in order to find LaTeX.
+
+SoftEnv was written in order to address this problem and to solve a number of
+others at the same time.  Specifically:
+
+=over
+
+=item *
+
+System and application directories can change over time, but
+the user does not need to keep track of these changes in order 
+to keep their path up to date and functional.
+
+=item *
+
+Users can specify particular versions of applications that might
+not otherwise be in their paths, but do not need to figure out
+where on the system these applications are hidden.
+
+=item *
+
+The system knows about applications that are installed differently
+on different machines, so can set paths appropriately dependent
+on the machine being used.
+
+=item *
+
+The SoftEnv system works with all common UNIX shells, so the user
+can specify their environment in a shell-independent manner.
+
+=item *
+
+A user can set up different configuration files for different
+environment preferences, and change between them at will.
+
+=item *
+
+The system does not replace the .cshrc or .profile, but instead
+augments it, removing the need to set up the PATH and other
+such variables in the .cshrc.
+
+=back
+
+SoftEnv works in the following way:
+
+=over
+
+=item *
+
+A user specifies the preference for PATH, MANPATH, and other 
+their preferences for PATH, MANPATH, and other software environment
+variables in a file in their home directory.  By default, this
+file is called "SOFTENVRC".
+
+=item *
+
+The system administrator sets up a database of system paths,
+application paths, and other environment variables.
+
+=item *
+
+When the user first logs in to a system, as part of the shell startup 
+scripts, the SoftEnv system is invoked.  It looks at the user's 
+preferences, looks up their values in the system database, and 
+creates a shell script in the user's home directory that sets up 
+their environment for them.  This file is called the software 
+"cache".  The system runs the cache file to load the environment,
+and is done.  The shell has all of the user's preferences loaded,
+and the user gets a shell prompt.
+
+=item *
+
+The next time the user logs in, their environment is already
+set up in the cache, with no overhead from the SoftEnv system, so
+login is quick.
+If the user changes their SOFTENVRC file, or if the system databases
+change (for example, some new directory might be added to the
+default path), then the SoftEnv system will detect this at the 
+next login and recreate their cache file.
+
+=back
+
+Typical usage for a user will go something like this:
+
+=over
+
+=item *
+
+The user creates their SOFTENVRC file, usually just containing a
+single line in it saying "@default".
+
+=item *
+
+They login, get their environment created, and go to work.
+
+=item *
+
+As they need to change their environment, they modify their SOFTENVRC 
+file and type "resoft", which rebuilds their environment.
+
+=item *
+
+Occasionally, the system databases will be modified, again because
+of some change in the default system paths.  The next time the
+user logs in in after a change, they will get a message at login
+telling them that their environment is being updated.  
+
+=back
+
+The login process, the system database, and each of the components that 
+make up the process are described in detail below.
+
+=head2 The Login Process
+
+Here is exactly how the login process works.  To make the explanation
+easier, I'll describe the case when the user's shell is based on csh
+or tcsh.  The process is essentially the same when the user's shell
+is bash or zsh, but the script names are slightly different.
+
+=over
+
+=item 1
+
+When the user's shell is first started, tcsh reads a global system
+startup script.  The name of this script varies from system to system,
+so we will refer to it here as /etc/tcsh.cshrc.
+
+=item 2
+
+First, /etc/tcsh.cshrc creates the resoft alias.  This needs to be
+an alias, not a script, because it must take place in the current
+shell.
+
+=item 3
+
+Next, /etc/tcsh.cshrc runs "softenv-load.csh", a csh script that loads
+the soft system.
+
+=item 4
+
+softenv-load.csh performs a few basic checks, including a check to see
+which version of SoftEnv should be used.
+
+=item 5
+
+softenv-load.csh looks for a file in the user's home directory called 
+".nosoft".  If this file exists, the user is saying that the SoftEnv
+system shouldn't be used, so softenv-load.csh will exit immediately.  
+In this case, skip to step 11.
+
+=item 6
+
+softenv-load.csh looks to see if the user has a SOFTENVRC file.  If the
+user doesn't have one, it creates the default SOFTENVRC for them.
+
+=item 7
+
+softenv-load.csh looks to see if the user has a cache file and if it
+is up to date.  By default, the cachefile is named SOFTENVRC.cache.csh
+and lives in the user's home directory.
+
+=item 8
+
+These two conditions are checked.
+  - The user's SOFTENVRC has been updated more recently than their 
+    cache file.
+  - The system's database of application data has been updated
+    more recently than the cache file.
+If either of these are true, softenv-load.csh will invoke soft-msc
+in order to make a new cache.  If both are false, soft-msc is
+skipped in order to speed login times, and control continues
+in step 10.
+
+=item 9
+
+soft-msc is a perl script whose purpose is to build the user's
+software cache.  It does this by reading the user's SOFTENVRC file and 
+the system database of application data, and then creating sh
+and csh scripts that set environment variables accordingly.
+
+=item 10
+
+At this point, softenv-load.csh can assume that the cache file is
+up to date (unless there was an error), and it executes the cache
+file.  The user's environment preferences are now loaded into
+the shell.
+
+=item 11
+
+Control returns to /etc/tcsh.cshrc, which will then exit and 
+return control to tcsh.  tcsh will continue, read the user's 
+dotfiles, and then give the user a prompt.
+   
+
+=back
+
+=head2 The Software Databases
+
+The software database is a set of files that store the desired values for
+environment variables.  This database is consulted when building the
+user's cache file.  For example, the database lists the exact paths that
+should be used if the user has "@default" in their SOFTENVRC file.
+
+The database consists of four files:
+
+=over
+
+=item *
+
+soft.db:  This is a file maintained by hand by the system administrator.
+It contains definitions for all the macros and many of the application
+packages that can be referenced by the user in their SOFTENVRC.
+
+=item *
+
+soft-auto.db:  A list of application environment variables generated
+automatically by the soft system, from a regular search of the file
+system in which the applications are stored.  This also does not
+trigger a cache file rebuild.
+
+=item *
+
+soft.dbc:  The actual database read by soft-msc.  This contains all 
+the data in soft.db, soft-beta.db, and soft-auto.db, encoded in
+such a way that it is faster to read and parse than the other databases.
+soft.dbc is built from the other databases by soft-msd.
+
+=item *
+
+soft.test.dbc:  A compiled database used for testing purposes.
+soft.test.dbc is built from the other databases by the t option to
+soft-msd.  This database is used by administrators to test the changes 
+they make to the database before it is used in the real soft.dbc.
+
+=back
+
+=head2 The Administrative Software Databases
+
+The administrative softare databases are the ones that are formatted to be
+read easily.  There are two of them.  The format of soft.db and
+soft-auto.db is as follows:
+
+=over
+
+=item *
+
+Blank lines are allowed.
+Lines starting with # are considered to be comments and are skipped.
+
+=item *
+
+An entry looks like this:
+
+  (key) {  entry  }
+
+=item *
+
+The parenthesis and braces are required.  White space is optional
+and can be inserted anywhere.
+
+=item *
+
+There are three kinds of entries, distinguished by the first character of
+their key:
+
+  Instructions, which have this syntax:  (%special)
+  Keywords, which have this syntax:  (+keyword)
+  Macros, which have this syntax:  (@macro)
+
+=back
+
+=over
+
+=item Instructions
+
+Instructions are instructions to the database on how to parse the 
+rest of the data. 
+
+=item *
+
+%accumulate:
+
+The accumulate instruction is used to indicate that a particular
+environment variable should be appended to as the SOFTENVRC file is read.
+For example, PATH and MANPATH are usually appended to, rather than
+being reset evertime a new PATH is added.  Other variables may need
+to be treated this way too - LD_LIBRARY_PATH, for example.  If a variable
+is being accumlated, then giving a value for it as an environment variable
+will cause that value to be appended to the existing string.
+
+Accumlated variables have two flags associated with them:
+
+uniquify:  Normally, when accumluating the PATH, for example, you
+            only want the first case of "/bin" to be included in it.
+            If "uniquify" is set, then an entry won't be added to
+            the variable if it already exists exactly in the variable.
+            The default behavior is to uniquify variables mentioned
+            as accumulated.
+
+separator: What character to use the separate individual components
+            of the variable.    The default separator is ":".
+ 
+If you want to override the values of the flags, then use the curly
+brace syntax shown in this example.   To override uniquify, use "n".
+To set a different string as the separator, simply put that string 
+there.  If you don't want a separator at all, don't put a string in.
+You do need to specify uniquify if you put in braces.
+
+  (%accumulate) {
+    # varname        uniquify      separator
+    PATH           
+    WEIRD_PATH     {  y             @@        }
+    LONGMANPATH    {  n  }
+  }
+
+=item *
+
+%databases:
+
+The databases instruction includes another file of definitions.  
+
+The format is any number of file names, each separated by some white 
+space.  Those files are looked for in the database directory that is 
+specified in softenv.config.pl.
+
+None of these databases are checked for updates at login time.  Modifying
+them will not cause a rebuild of the user's cache.  
+
+At the end of reading all the databases, soft-msd checks for conflicts.
+If any keyword or macro is doubly-defined, it signals an error.  We
+may want to consider adding a flag to some of these databases, saying
+that definitions in them should be ignored if they already exist in
+soft.db.  The reason we might do this is that at least one of the 
+extra databases is auto-generated, and we may want to override things
+in there in soft.db.
+
+=item *
+
+%initialize:
+
+The initialize instruction describes variables that should be set
+at the very beginning of the SOFTENVRC.cache files.  The format is:
+
+  (%initialize) {
+      # varname           value
+    [] {
+      WHATAMI           $ARCH
+      UNAME             `uname`
+    }
+    [linux] {
+      ANIMAL            `/usr/local/bin/randomanimal`
+    }
+  }
+
+Note that each architecture has a seperate definition, and there is a
+default definition defined too.  However, econs cannot be used because
+this is generally the section in which the econs are defined.
+
+The variable will be set to whatever the value says.  Note that the
+path for executables is tricky...  A hardcoded path, like whatami
+in the example, must exist on every machine, or else the cache file
+will fail with an error.  Alternatively, if the program is in a 
+different place on different machines, like uname, then you have to 
+hope that the user's initial environment can at least find this program
+everywhere.
+
+The reason you would set a variable in this section is so that you
+can reference it in the keywords section as part of an econ
+definition.
+
+There is a special note to be made here.  The environment variable ARCH is
+an assumed initialized value which is set first.  It is set to whatever the
+'architecture identification program' returns.  An example of this type of
+program is 'uname'.  However, many sites use their own method of defining
+architectures.  This program can be defined in softenv.config.pl.  It
+returns a unique string for each architecture class.  This is used within
+SoftEnv to set the environment based on the architecture.
+
+The envorionment variables will be initialized in the same order as you list
+them in the %initialize statement.  This is insured when the compiled database
+is created, so you can safely have WHATAMI be set to $ARCH, as in the example.
+
+=item Keywords
+
+Keywords describe an entry for a software package.
+
+=item *
+
+Syntax
+
+  (+keyword) {
+    <keyword entry>
+  }
+
+In the keyword entry, values are assigned to environment variables.  They
+are divided up into architecture specific lists of variables.  The
+description is not required, but it is wise to put in a description of the
+keyword.
+
+In the simplest case, the keyword entry looks like this:
+
+  []  VARIABLE value
+
+This says that, in the default architecture (i.e. in all architectures),
+assign value to the environment variable VARIABLE.  Multiple variables
+can be listed:
+
+  []  PATH  /foo/bar
+      MANPATH /foo/man
+
+The square braces indicate the architecture that the variables apply to.
+So this entry would only take effect on machines of type aix-4:
+
+  [aix-4] PATH /foo/bar
+
+An architecture entry can list multiple types of architectures separated
+by vertical bars:
+
+  [aix-4|solaris-2]  PATH /foo/bar
+
+The way that keyword entries are typically done is that a default environment
+is specified, meaning that those values should be set on every system.
+Then, architecture-specific variables are used to modify that environment
+where necessary.
+
+For example, you could say:
+
+  (+emacs19) {
+    []  PATH /soft/gnu/bin
+        MANPATH /soft/gnu/man
+
+    [sun4|freebsd]  PATH /usr/local/emacs-19/bin
+   
+  }
+
+If a variable is assigned a value in the default architecture, then
+it will be assigned that value in all architectures, even if other
+variables are assigned values for that architure.  In the example
+above, the MANPATH for sun4 will still have /soft/gnu/man added to it.
+
+If this behavior is not desired, the environment variable can be turned
+off by putting a ! in for it.  In the following example, no value will
+be appended to MANPATH on sun4s.
+
+  (+emacs19) {
+    [] {  PATH /soft/gnu/bin
+          MANPATH /soft/gnu/man
+       }
+
+    [sun4] {  PATH /usr/local/emacs-19/bin
+              MANPATH !
+           }
+  }
+
+
+=item *
+
+Description
+
+A description can be used the following way:
+
+  (+emacs19) {
+    {desc: "This is emacs 19.  Emacs rox!"}
+  }
+
+Descriptions are very helpful for saying what the application is, or the
+version of an application.
+
+=item *
+
+Flags
+
+Flags are used to note characteristics of a keyword, and are defined in
+the same way as the description.  Like so:
+
+  (+foo-2)
+  {
+    {flags: <flag>}
+  }
+
+The flags that exist are power, useful, hide, ordered, and auto.  Power
+means that the keyword is useful for 'power' users who like to define their
+own paths.  Useful is a useful path that might be helpful.  Hide is used to
+hide a keyword from the output, so that users do not know it exists.  This
+is helpful on things like +default-environent, when it is not necessary for
+users to know about it.  Ordered is used to indicate that the variables
+defined for the application should be set in the same order in the
+resulting cache file.  Usually, they are not kept in the same order for
+efficiency reasons.  Lastly, auto is used for any applications that are
+automatically entered into the software database. 
+
+So you could do the following:
+
+  (+foo-2)
+  {
+    {flags: useful hide ordered}
+  }
+
+=item *
+
+Groups
+
+Groups are used to define 'groups' of applications for use with the
+softmenu program.  Here is the syntax:
+
+  (+emacs19) {
+    {group: emacs}
+
+    <definition>
+  }
+  (+emacs20) {
+    {group: emacs}
+
+    <definition>
+  }
+
+By doing that, these applications are put into the same group.  The
+program softmenu can then use this group.  Read the information on
+softmenu below in the SoftEnv Extras section.
+
+=item *
+
+Econs
+
+An important feature is the inclusion of environment conditionals, also
+known as econs.  Many times, the PATH to use does not only depend on the
+architecture, but on another condition that must be checked.  In that
+case, econs are used, like so:
+
+  (+emacs19) {
+    {desc: "Emacs rox!"}
+    {flags: useful}
+
+    [irix-6] {  
+         PATH /usr/local/emacs-19/bin
+    }
+    [irix-6 (UNAME=IRIX64)] {
+         PATH /usr/local/emacs-19-64bit/bin
+    }
+    [linux (HOSTNAME != gaea)] {
+         PATH /usr/local/emacs-19/bin
+    }
+  }
+
+The value UNAME can be defined in the %initialize section, which is
+described above.  If this equals IRIX64, then the special definitions are
+used.  Note also that for the linux definition, the PATH set is done on
+every machine except the one named gaea.  Both '!=' and '=' can be used.
+
+Econs can also be used for the default case, like so:
+
+    [ (SHELL=/bin/zsh)]
+
+However, this econ will ONLY be pushed out to the other architectures if
+nothing has been defined for that architecture.  To make it clearer, look
+at this:
+
+  (+foo-3.1) {
+    {desc: "foo"}
+    
+    [] {
+      MANPATH /foo
+    }
+    [ (FOO=bar)] {
+      MANPATH /foot
+    }
+    [irix-6] {
+      PATH /software/irix-6/com/bin
+    }
+  }
+
+Notice that there is a default case and an econ for the default case.  For
+every architecture besides irix-6, these two definitions will be in
+effect.  However, for irix-6, since we defined something for it, it would
+be unnecessary and problematic to use the econ which was defined for the
+default.  However, the MANPATH definition from the default, /foo, will be
+added to the irix-6 definition.  Hopefully that made sense.
+
+=item *
+
+Pointers
+
+Pointers are useful for working with different versions of the same
+application.  With a pointer, you can direct one definition for a keyword
+to the same definition at a different keyword.  Look at this example:
+
+  (+foofoo) {
+    {desc: "the default version of foofoo"}
+    [linux] {
+      pointer +foofoo-3.2
+    }
+    [irix-6] {
+      pointer +foofoo-3.1
+    }
+  }
+
+  (+foofoo-3.2) {
+    [linux] {
+      PATH /foofoo/linux/bin
+    }
+  }
+
+  (+foofoo-3.1) {
+    [irix-6] {
+      PATH /foofoo/irix/bin
+    }
+  }
+
+With this style, you can define a keyword which is used as the default but
+which uses different versions for each architecture.  One thing to
+remember is that this correspondence is very strict.  You can only use a
+pointer if that same definition is used in the keyword pointed to.  So, if
+in the above example, the definition for +foofoo-3.2 only had a default
+definition, an error would be created, because the correspondence is not
+exact.  Also, only one definition is used in the pointer.  For example, if
+a linux definition points to a keyword with a linux definition and many
+econs for linux, only the definition for linux is used.  Hopefully that
+makes sense.  
+
+=item *
+
+Commands
+
+Many times it is useful to insert a command to be executed on login.  This
+can be done in the following way:
+
+  (+test) {
+    [linux] {
+      command "echo 'Testing...'"
+    }
+  }
+
+Then, on login, "Testing..." will be outputted.  Obviously, more useful
+commands can be used.  It might be useful to redirect stderr or
+stdout messages to /dev/null so that users do not get worried.  Or it
+might be useful to keep the messages.  It is entirely useful to include
+the command in quotations if there is whitespace inside of it.
+
+Philosophically, SoftEnv was designed so that all changes could be made
+within the SoftEnv system itself.  However, the command feature was
+provided because sometimes you just can't do that.  That said, be very
+careful about what commands are executed outside of the SoftEnv
+system.  They should exist on all platforms, and should usually not output
+anything.  If any environment variables are changed, consider doing it
+inside of SoftEnv.  For example, SoftEnv orders keys so that they are
+appended to variables in the correct order, such as the PATH variable.  If
+this is done outside of SoftEnv, it can damage the PATH variable as much
+as it wants.
+
+=item *
+
+Source Commands
+
+While sometimes running a command is you all need to do, sometimes it is
+useful to source.  Many times, if the file contains only a few definitions,
+these definitions can be put into the application definition.  But many
+times, applications come with their own files to be sourced on startup.
+
+Source commands can be done in the following way:
+
+  (+test) {
+    [solaris-2] {
+      source '/path/to/file/to/source'
+    }
+  }
+
+However, there is a complication.  Since SoftEnv can handle both csh and sh
+based shells, there will need to be two files for each shell.  The way this
+is handled is that the path in the source command isn't an actual file.
+The suffix '.sh' or '.csh' will be appended onto the path to get the actual
+filename.  So, in order for the source command to work, there needs to be
+two files in existance.  So, if the path in the source command is C<path>,
+C<path.sh> and C<path.csh> will need to exist.
+
+The corresponding source file will be run whenever that keyword is added to
+the environment.
+
+Philosophically, SoftEnv was designed so that all changes could be made
+within the SoftEnv system itself.  However, the source feature was
+provided because sometimes you just can't do that.  That said, be very
+careful about what commands are executed outside of the SoftEnv
+system.  They should exist on all platforms, and should usually not output
+anything.  If any environment variables are changed, consider doing it
+inside of SoftEnv.  For example, SoftEnv orders keys so that they are
+appended to variables in the correct order, such as the PATH variable.  If
+this is done outside of SoftEnv, it can damage the PATH variable as much
+as it wants.
+
+=item Ordered Definitions
+
+Usually, most applications do not need to have their environment variables
+defined in a certain order.  A PATH and a MANPATH setting are all that is
+needed.  But sometimes, order is needed, for example, when one definition
+depends on some other definition, or when commands need to be run or files
+need to be sourced.  This can be done with the ordered flag.  Here is an
+example:
+
+
+  (+test) {
+    {flags: ordered} 
+
+    [linux-rh73] {
+         MAIN_DIR  /path/to/main/installation
+         ETC_DIR   ${MAIN_DIR}/etc
+    }
+  }
+
+Obviously, these definitions will only be done correctly in that order, so
+the ordered flag should be inserted.
+
+When it is not necessary, the ordered flag should NOT be specified, because
+some optimization is done to set all of the variables for a user at the
+same time.  An ordered flag means that extra conditionals will need to be
+done when sourcing the cache file on startup.
+
+=item *
+
+Things to Note
+
+Each keyword entry can have many architecture entries, and does not
+need to contain a default value.   By convention, the default architecture
+is listed first, but it is not necessary for it to be listed first.
+
+If a variable is listed twice in an architecture specification, 
+the second definition will override the first.
+
+If a value for a variable needs to have white space in it, then the whole
+value should be contained inside of double quotes.
+
+Any double quotes in the values for variables will be removed.  The
+strings themselves will be preserved, but the quotes will vanish.   This
+might be the wrong behavior... it's not clear yet.  (This is a side
+effect of the parsing algorithm, but it's not obvious what should be done
+with quotes, since they have special meaning to the shell scripts that 
+are produced as well.)
+
+Any references to variables, for example:
+
+  [solaris-2] { PATH $FOO }
+
+will work, but will be inserted into the user's shell scripts as:
+
+  setenv PATH ${FOO}
+
+=item Macros
+
+Macros have this syntax:  
+
+  (@macro) { <macro entry> }.
+
+Macros are simply collections of keywords and other macros.
+
+Here is an example macro:
+
+  (@default) {
+    {desc: "Here is the default macro, defining all of the default paths"}
+    @standard
+    +home
+    +dot
+  }
+
+The resulting environment includes all of the entries in the @standard
+macro, the +home keyword, and the +dot keyword.  The description works
+just the same as a description for a keyword.
+
+Macros can not be recursive, i.e. macros can not include macros which
+eventually include the first macro.
+
+Macros can have flags associated with them, just like keywords. 
+Flags are used only for the program 'softenv', to help users work with
+their SOFTENVRC file.  Here is an example flag:
+
+  (@default)
+  {
+    {desc: "foo"}
+    {flags: <flag>}
+  }
+
+Currently, the only flags that exist are power, useful, and hide.  Power
+means that the keyword is useful for 'power' users who like to define
+their own paths.  Useful is a useful path that might be helpful.  Hide is
+used to hide a keyword from the output, so that users do not know it
+exists.  This is helpful on things like +default-environent, when it is   
+not necessary for users to know about it.
+
+So you could do the following:
+
+  (@default)
+  {
+    {flags: useful hide}
+  }
+
+Macros can be limited only to certain arches.  Many times, it is necessary
+to group together a set of apps just for a certain architecture, for
+example, the default set of applications for a supercomputer.  Since this
+macro should not be used on all architectures, it should only be specified
+for that single architecture.  This can be done with the arches statement:
+
+  (@default-for-sun4)
+  {
+    {arches: sun4}
+  }
+
+So, if this macro is included in @default, which almost all users utilize,
+they will only get applications necessary for sun4 on sun4 machines.
+
+=back
+
+=head2 The Compiled Software Databases
+
+In actuality, the software database files are fairly complicated and slow,
+and could easily have human-entered errors in them.  So, to fix these
+problems, soft "compiles" the software databases into a better
+machine-readable format.  These compiled databases are what are actually
+read when building the user's cache files.  The soft.dbc and
+soft.test.dbc files have the same format.
+
+To compile a database, one runs the "soft-msd" command.  ("msd" stands
+for "make software database".)
+
+=over
+
+=item Compiled Database Format
+
+soft-msd takes a database in the format described in the above section,
+which consists of keywords, macros and special words, and builds a file
+that lists all of that information on a line-by-line basis in this format:
+
+  ACCUMULATE:variable->value
+
+This says whether or not this variable should be accumulated.  (An
+accumlated variable is one that gathers values rather than being reset
+with new values, like "PATH".  See above for a better description.) The
+value to the right of the arrow is the separator used when accumulating
+values, which will ususally be a ":".
+
+  UNIQUE:variable->
+
+This says that this variable should be uniquified.  In detail, this means
+that, when accumulating this variable, if the variable already has an
+instance of the new value, that new value is not appended.  For example, if
+PATH is uniquified, then "/bin" will only be added to the PATH the first
+time it is encountered.  (This is an exact string match, so "/usr/bin"
+would still be added even if "/bin" were in the path.) 
+
+This entry has a 1 right side of the arrow which means nothing; mere
+existence of the UNIQUE flag is enough to indicate that the variable should
+be uniquified.
+
+  INITIALIZE:arch:#:variable->value
+
+This line comes from the %initialize statement.  Each variable in the
+%initialize should be translated to one INITIALIZE statement, with the
+value being whatever was specified in the %initialize area.  The arch
+is the architecture for which this initialize statement is defined.  The #
+indicates the order in which the commands should be executed.  This is
+because some variables might depend on some other variables.  Anyways, 1
+is executed first, then 2, etc...
+
+  MACRO:variable->value
+
+This says that the variable is a macro.  The value is the set of strings,
+separated by a space, that make up the macro.  They may themselves be
+macros.  The macro resolution is done in soft-msc, not at the time of
+building the database.
+
+  MACRO_ARCHES:variable-> <archlist>
+
+This list contains the arches that this macro exists on.  It is populated
+from the {arches} statement in a macro definition.
+
+  DESC:variable->value
+
+This is the documentation string for a macro or a keyword, as given
+in the database.  The value is identical to that typed into the database,
+not including the leading and trailing quotes.
+
+  ENV:keyword:arch:econ:variable->value
+
+The ENV key holds the specified values for the environment variables.
+
+The "keyword" entry contains the name of the keyword that the variable 
+is a part of, such as "+emacs19" or "+home".  There is no default
+keyword.
+
+The "arch" entry contains a single name for the architecture that it
+refers to.  The default architecture has the name "default".
+
+The "econ" entry contains the environment conditionl.  If there is none,
+then the string "NO-ECON" is used.  The vast majority of the database has
+"NO-ECON" in this section.
+
+The "variable" entry contains the name of the environment variable to
+set.  There is no default variable name.
+
+The "value" contains the actual value to set to that variable. 
+
+  FLAGS:variable->flag
+
+Flags are used to specify characteristics of a keyword.  Some examples are
+auto, power, hide, and useful.
+
+  GROUP:variable->group
+
+This specifies which groups a keyword belongs to.  They are organized by
+variable, and not group.
+
+=item Compiled Database Content
+
+The compiled database contains a lot more data than is listed in the
+basic database.  This is because of how the "default" architecture works.
+It turns out that it's a lot easier to handle this at cache-building time
+if we create database keys for every architecture that we know about.
+
+So if the default for some key contains a PATH setting, then all known
+architectures will be added to the database with that PATH set.
+
+=item soft.dbc and soft.test.dbc
+
+These two files are created the same way, the latter is just created with
+a t option to soft-msd.  soft.test.dbc is used for the 'softcheck'
+feature, which is described in the following section.
+
+=back
+
+=head2 SoftEnv Extras
+
+These next few sections are features of SoftEnv that administrators should
+know about and know how to use, but they don't fit in any of the previous
+sections about the databases.
+
+=over
+
+=item The automated database soft-auto.db
+
+The program entitled soft-mad is designed to search the filesystems in
+which applications are stored, and put them correctly formatted into the
+file soft-auto.db.  Obviously, this program is very site-specific, because
+different sites install their software differently.  The format of the
+filesystem is assumed to be in the structure developed from the pkg
+system, a separate utility to install software and efficiently work with
+it.  You are encouraged to edit the program soft-mad to fit your 
+filesystem.  On the other hand, you may decide not to use it, for example
+if your set of applications is very small.  However, if you indeed decide
+to use soft-mad, it is used simply by putting the program into a cron job,
+whether it be daily or weekly or biweekly.
+
+=item softmenu to help users
+
+A keyword can be defined as part of a group of applications.  Read the
+section on defining groups in the database section above.  The program
+softmenu will display a menu to choose an application from that group.
+So, for example, the administrators can define an emacs group like the
+following:
+
+  (+emacs19) {
+    {desc: "Emacs 19"}
+    {group: emacs}
+    <definition>
+  }
+  (+emacs20) {
+    {desc: "Emacs 20"}
+    {group: emacs}
+    <definition>
+  }
+
+Now, when 'softmenu emacs' is run, the following will be displayed:
+
+  Please select the version of software that you wish to use:
+
+  1) Emacs 19
+  2) Emacs 20
+
+  Your choice?
+
+The user can select 1 or 2, and the changes will be made to their
+environment.  If anything else is selected, or nothing is selected, their
+environment will not be affected.
+
+This feature can be used for quickly changing your environment, to satiate
+a user's or administrator's need for simplicity, or just to have
+awesome menus to play with.
+
+=item Editing the administrative databases and testing
+
+A useful feature for administrators is the new softcheck feature.
+Basically, when an administrator edits the database, they will then save
+it and compile it and hope there are no errors.  One can pass the n option
+to soft-msd, but that just checks for syntax errors in the database file.
+By running a simple command, the administrator can test the changes as
+they would actually be used, by seeing if the correct environment
+variables are set.  
+
+That single command is 'softcheck'  After soft.db is edited, do not run
+soft-msd right away.  This will save the changes to the database.
+Instead, run softcheck.  This is an alias just like resoft, but it does a
+lot more.  It passes the t option to soft-msd, which creates  
+soft.test.dbc.  Then it runs soft-msc with the t option, which tells it to
+use soft.test.dbc instead of soft.dbc.  After soft-msc runs and the cache
+files are created, then the correct cache file is ran.  So, in effect,
+this is running resoft on the other database. Note that your SOFTENVRC file or
+the alternate SOFTENVRC file you pass to softcheck needs to have what you want
+to test in it.  Then, after running, if the environment variables and
+your environment work like you expected, run soft-msd like normal.  And
+then resoft to get your environment back to normal if you want.
+
+=item Logging the administrative database changes
+
+Another useful feature is the program soft-mwl.  This program creates
+an html formatted log of database updates.  This comes from the RCS logs
+of soft.db, so obviously if your soft.db is not controlled by RCS, this
+program is useless.  It creates the html file specified in
+softenv.config.pl, which is default to etc/soft.db.html.  This feature
+will usually make administrators decide to add comments when they make
+changes to the database, as their username is in the log.  This program
+can be run at anytime.  It can work as a cron job, or you can have
+administrators run it after they edit soft.db.
+
+=back
+
+=head2 The cache files
+
+The cache files SOFTENVRC.cache.csh and SOFTENVRC.cache.sh are created in the
+users home directory whenever soft-msc runs.  Since these are autocreated,
+unlike the administrative databases and the SOFTENVRC file, there is not much
+to be said about them.  More information can be found in the softenv-code
+manual.  
+
+However, the cache files have the errors from the execution of soft-msc in
+them.  This can be important in debugging a users SOFTENVRC file.  
+
+Also, if these files cannot be created, whether it be permission problems
+or a filesystem full error, the default environment is given to the user.
+It is better to have a dinky environment than no environment at all.
+
+=head2 The SOFTENVRC file
+
+Users can specify their preferred environment by creating a file called
+"SOFTENVRC" in their home directory.  This section describes the contents
+of that file.
+
+It's important to note that most users should not have to care about 
+the syntax of the SOFTENVRC file.  Having this single line:
+
+  @default
+
+will get the job done for most people - the whole point of this system
+is to make it easy for administrators to set the default environment 
+up so that it includes everything that most people will want in it.
+
+So - this documentation is written for people who want to have very
+low-level control over their environment.
+
+=over
+
+=item Syntax of SOFTENVRC
+
+Each line of SOFTENVRC can contain one entry, as described in the next
+section.
+
+Comment lines start with a '#' as the first character.   These lines
+are ignored, as you would expect.  You can not have a comment on the
+same line as some useful text (i.e. you can't have a comment on the
+right side of a keyword).
+
+Blank lines are acceptable and ignored.
+
+The syntax of the SOFTENVRC file could be a lot more powerful.  However, this
+system is being written by system administrators who have limited amounts
+of time for programming, so the syntax is being kept simple in order to
+reduce debugging time.  It works fine, but might not be as elegant as
+one would like.
+
+
+=item Entries in SOFTENVRC
+
+Each line of the SOFTENVRC file can contain one entry.
+
+An entry can consist of any of the following:
+
+ - a system keyword
+ - an application keyword
+ - @remove
+ - variable = value
+ - PATH += value
+ - MANPATH += value
+ - variable += value
+
+A system keyword is a word beginning with the @ symbol.  It refers to a
+collection of paths and environment variables.  Typical system keywords
+include "@default" and "@system".  The set of system keywords can be found
+by running 'softenv'.  You can find information about keywords with the
+program 'soft-dbq'.
+
+An application keyword is a word beginning with the + symbol.  It refers to
+a set of application paths and environment variables specific to some
+particular version of an application.  Note that this is generally
+not a good idea!  See the discussion below about referencing specific
+applications.  The set of possible application keywords can
+be found by running 'softenv'.
+
+@remove is the method used to remove keywords.  This is needed with the
+use of macros.  Sometimes, a macro has a certain version of an application
+in it.  A user might want to use a different version of that application,
+while still keeping the rest of the information included in the macro.
+@remove takes arguments and removes those macros and keywords from any
+future macros.  Therefore, if gcc-2.1 is in the @default macro, and the
+user wants gcc-2.5, the following is done:
+
+  @remove +gcc-2.1
+  @default
+  +gcc-2.5
+
+@remove MUST be before the macro it operates on, and it also works for any
+following macros.  @remove also operates for EVERY architecture, so if a
+user wants to use gcc-2.5 on only linux, this is done:
+
+  @remove +gcc-2.1
+  @default
+  if ARCH=linux +gcc-2.5
+  if ARCH=sun4 +gcc-2.1
+  if ARCH=irix-6 +gcc-2.1
+  ...
+
+This seems bad, but it is the most logical and simple way to do it.  The
+users should not freely use @remove in their SOFTENVRC file.  The user should
+announce his need for an interesting environment, and then the
+administrator will recommend the format necessary, such as above.
+
+To set an environment variable, use this syntax:
+
+  FOO = bar
+
+This is handy because you can use your SOFTENVRC as a shell-independent way of
+setting up your environment.  However, do not try to set the PATH or
+MANPATH this way.  Your resulting PATH will be very strange.
+
+To append a particular directory to your PATH or MANPATH, use this syntax:
+
+  PATH += /some/directory
+  MANPATH += /some/directory/man
+
+You can use the same syntax to append strings to other environment variables:
+
+  LD_LIBRARY_PATH += ${HOME}/lib
+
+Be careful when writing the values that these variables should take on.
+These strings are used to create sh and csh scripts, so whatever you use
+will be referred to verbatim in those scripts.  Thus, the best way to refer
+to some other environment variable (such as $HOME in the above example) is
+to use this syntax:
+
+  ${VAR}
+
+Quotation marks and blank space on the right hand side of an assignment
+will also be used in exactly the way they are written in the SOFTENVRC file.
+
+
+=item Conditional Lines
+
+Any line can be preceeded by a condition.  The line will only be used if
+the condition is true.  Conditions are very simple - they compare the value
+of an environment variable to a value, and if the two are exactly the same,
+then the entry on that line will be invoked.  A condition is written in the
+following way:
+
+  if <variable> = <value> then <entry>
+  if <variable> != <value> then <entry>
+
+Examples of a conditional entry include:
+
+  if HOSTNAME = denali then +xwave-1.0
+  if ARCH = irix-6 then PATH += /home/friend/quake/bin
+  if HOSTNAME != gaea then @default
+
+=item The order of entries in SOFTENVRC
+
+Each line in the SOFTENVRC file causes a set of environment variables
+to take on a particular value.  The effects of these variables
+take place in the order specified in the file.  This means that the
+order of the entries in the SOFTENVRC file is very important.
+
+For example, a line saying "FOO = bar" sets the environment variable
+FOO to bar.  Let's say you have these two lines in your SOFTENVRC:
+
+  FOO = bar
+  FOO = qux
+
+When SOFTENVRC is finished executing, FOO will be equal to "qux".
+
+This is a bit trickier when it comes to setting your PATH, because
+your shell reads your PATH variable and looks for programs by reading
+each directory in your path in the order that the directories are in
+the PATH variable. Let's say you have these two lines in your SOFTENVRC:
+
+  @default
+  PATH += ${HOME}/test/bin
+
+These two lines will set your PATH to the value of the default system path,
+and then append the directory $HOME/test/bin to the PATH.    This is
+probably what you want.  
+
+However, let's say you had these two entries in your SOFTENVRC:
+
+  +totalview-2.3
+  @default
+
+These entries mean "put totalview-2.3 in my path, and then put all
+the system directories in my path".  This will work great as long
+as you really want totalview-2.3.  However, if totalview gets upgraded,
+and totalview-2.5 becomes a part of the system directories, you will
+still be getting totalview-2.3.  This may be what you want, but it
+may not.
+
+=item Working with your SOFTENVRC file
+
+When your SOFTENVRC file is read by soft, it creates csh and sh cache files
+that are called:
+
+  SOFTENVRC.cache.csh
+  SOFTENVRC.cache.sh
+
+These are built directly from your SOFTENVRC file. 
+
+If there are any detectable errors in your SOFTENVRC file, a warning will be
+printed as the file is processed.
+
+Whenever a change is made to the SOFTENVRC file, the changes can be loaded
+into the current enviroment by running this command:
+
+  resoft
+
+If you're using a file other than 'SOFTENVRC', you can load your enviroment
+by pointing the resoft command at that file:
+
+  resoft SOFTENVRC-other
+
+The next time you login, you will get the environment created from your
+SOFTENVRC, not this other file.  This is because your SOFTENVRC is used on each
+different system, and changing the default cache can get fairly confusing.
+
+=item Environment Variables
+
+For convenience when using conditional clauses in your SOFTENVRC, the soft
+system guarantees a few environment variables for you:
+
+ARCH
+
+This environment variable will contain a string that is
+unique for each architecture within the computing environment.
+
+HOSTNAME
+
+This environment variable will contain a string that
+is the short name for the computer you are currently using.  It
+does not include the domain name portion of the hostname.
+
+HOST
+
+This environment variable will contain the long version
+of the name of the host you are currently using.
+
+=back
+
+=head2 Authors
+
+SoftEnv was created by Remy Evard, designed and developed by Remy Evard and
+Alan Bailey, and includes contributions from others.
+To contact the authors visit http://www.mcs.anl.gov/systems/software/.

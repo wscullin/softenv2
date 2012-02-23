@@ -1,0 +1,8 @@
+677c677
+<       &resolve_macro_pass_2(\@p2, $i, \@removals, $i->{"op1"}, 
+---
+>       &resolve_macro_pass_2(\@p2, $i, \%removals, $i->{"op1"}, 
+701c701
+<   my($removals_ptr, $keyword, $new);
+---
+>   my($keyword, $new);

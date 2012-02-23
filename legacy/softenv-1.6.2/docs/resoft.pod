@@ -1,0 +1,27 @@
+=head1 NAME
+
+resoft - recreate the software environment
+
+=head1 DESCRIPTION
+
+This command recreates the working environment with one command.  Do it
+anytime you edit your SOFTENVRC file to commit the changes.
+
+B<NOTE:> This manual page only describes basic information for the program
+titled resoft. If you are new to the SoftEnv system, refer to 'man
+softenv-intro'.  For administration details, refer to 'man softenv-admin'.
+More detailed information about this program can alo be found in those
+manual pages.
+
+=head1 OPTIONS
+
+resoft [file]
+
+=over
+
+=item <file>
+
+If a file is listed, that file is used instead of your SOFTENVRC file to
+recreate the software environment.
+
+=back
