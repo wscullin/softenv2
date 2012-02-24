@@ -1,0 +1,25 @@
+thinking.txt
+------------
+This file is for strategy, thinking, and over all notes while
+coding on softenv. It's a good idea Alan started and we should keep up.
+
+
+24 February 2012 ( wscullin )
+
+    I gave the legacy code a reread from start to finish this evening. I understand the reason now for compiling to a database file and am thinking about if that's something that should be preserved moving forward - or if it should be exploited a little further.
+    
+    It's not clear to me right now how to add functionality. Things that are needed early:
+    
+    - in-gathering of fixes to the legacy code 
+    - dependancies lists and checking
+    - ability to save current user state
+    - making sure that multiple databases really are supported
+    -- this means making sure that etc/*/*.db gets globbed 
+       and watched for changes
+    - stock metadata tags / a way to call in a package metadata file
+    - a conversation on the UI
+    -- modules does this partly right as module gives you all the commands 
+       possible soft gives a short help, but either it needs more functionality or to tell the user more...
+    -- the admin commands need meaningful names
+    
+    I started also to replicate the legacy perl parser in python and am looking for a better document parser than a bunch of python regexes. This isn't knocking the legacy parser, it's a testament to perl's rexeg engine.
