@@ -146,6 +146,9 @@ get_linux_type()
                 
                 elif [ -n "`egrep 'Red Hat Linux release 8.0 ' /etc/issue`" ]; then
                         distro=redhat_8.0
+
+                elif [ -n "`egrep 'Red Hat Enterprise Linux Server release 6' /etc/issue`" ]; then
+			distro=rhel6			
                 
                 elif [ -n "`egrep 'Mandrake Linux release 9.1 ' /etc/issue`" ]; then
                         distro=mandrake_9.1
