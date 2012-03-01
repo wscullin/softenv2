@@ -22,7 +22,7 @@
 # 
 #   Alan Bailey, bailey@mcs.anl.gov
 # 
-# $Id: softenv,v 1.20 2007/02/05 20:46:49 navarro Exp $
+# $Id: softenv,v 1.3 2010/08/26 23:00:23 wscullin navarro Exp $
 #
 # slightly modified by John Valdes, valdes@mcs.anl.gov so that keys and
 # descriptions don't get truncated when printed
@@ -51,7 +51,7 @@ use strict;
 use vars qw(%defaults %db $string_of_archs $program);
 use vars qw($database $test_database);
 use vars qw($package_name $version %supported);
-use vars qw($regexp $regexp_comment $arch $architecture_comment);
+use vars qw($regexp $regexp_comment $arch $architecture_comment $arch_id_program);
 
 use vars qw($defaultflag $uflag $pflag $keyname $printkeyname $description);
 
@@ -85,6 +85,9 @@ sub set_globals {
 
   ($program = $0) =~ s:.*/::;
   $string_of_archs = join " ", keys %supported; 
+
+  chomp( $arch = `$arch_id_program` );                        
+  $arch = undef if (! $supported{$arch});
 
   %db = &read_database($database);
   %defaults = &grab_defaults;
