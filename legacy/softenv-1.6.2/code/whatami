@@ -3,7 +3,7 @@
 # whatami
 # Prints a string describing the system type.
 #
-# $Id: whatami,v 1.15 2005/01/19 20:40:00 smc Exp $
+#   $Id: 
 #
 # "whatami" is part of Msys, the MCS Systems Administration Toolkit.
 # For more information, see http://www.mcs.anl.gov/systems/software/ .
@@ -36,25 +36,72 @@
 #
 #   Remy Evard <evard@mcs.anl.gov>
 #       - Version 1.0 and 2.0:
-#   2003.03.12 Brian Elliott Finley <finley@mcs.anl.gov>
+#   2003.03.12 Brian Elliott Finley <finley@anl.gov>
 #       - added get_linux_type function to provide a three part type:
 #         Ie: linux-debian_unstable-ia32, or linux-sles8-ia64
 #       - added -o (option_test)
 #   2003.10.16 Larry A. Diegel <diegella@sdsc.edu>
 #       - patch for aix-5
-#   2004.01.17 Brian Elliott Finley <finley@mcs.anl.gov>
+#   2004.01.17 Brian Elliott Finley <finley@anl.gov>
 #       - modified --help output
 #       - accept --long-options as well as -s (short options)
-#   2004.02.04 Brian Elliott Finley <finley@mcs.anl.gov>
+#   2004.02.04 Brian Elliott Finley <finley@anl.gov>
 #       - identify macosx on ppc and ppc64
 #       - identify linux on Opteron (x86_64)
-#   2004.02.26 Brian Elliott Finley <finley@mcs.anl.gov>
+#   2004.02.26 Brian Elliott Finley <finley@anl.gov>
 #       - add redhat AS
 #       - add mandrake 9.1
 #       - add redhat 9
 #       - add redhat 8
 #   2005.01.19 Susan Coghlan <smc@mcs.anl.gov>
 #       - add sles8 PPC64
+#   2005.02.01 Susan Coghlan <smc@mcs.anl.gov>
+#       - add sles9 
+#   2005.03.07 Brian Elliott Finley
+#       - add rhel, and deal w/different versions, sub-distros (AS|EL|WS)
+#   2005.04.21 Peter Couvares <pfc@cs.wisc.edu>
+#       - add tao linux 1.0, cygwin
+#   2005.04.22 Ti Leggett <leggett@mcs.anl.gov>
+#       - add Gentoo
+#   2006.03.14 JP Navarro <navarro@mcs.anl.gov>
+#       - more precise AIX type, aix-{version}.{release}
+#       - add Cray Rocks 1.3
+#       - add CentOS 4.0
+#       - add SGI ProPack 3 -> rhel3
+#       - add SGI ProPack 4 -> sles9
+#       - add SuSE 9.1
+#   2006.03.21 JP Navarro <navarro@mcs.anl.gov>
+#       - add Fedora Core <n>
+#       - drop RHEL sub-distros
+#       - ClassAd output support
+#       - XML output support
+#   2006.03.30 Ti Leggett <leggett@mcs.anl.gov>
+#       - Fixed CentOS to recognize 4.x instead of only 4.0
+#   2006.10.17 JP Navarro <navarro@mcs.anl.gov>
+#       - Add SuSE 10.1
+#   2007.01.02 JP Navarro <navarro@mcs.anl.gov>
+#       - Add SuSE 10.2
+#   2007.02.06 Ti Leggett <leggett@mcs.anl.gov>
+#       - Add MacOS on Intel support
+#   2008.10.14 Brian Finley <finley@anl.gov>
+#       - Add generic lsb_release support
+#         - includes CentOS 5.x
+#   2008.10.30 Ethan Mallove <ethan.mallove@sun.com>
+#       - Support two different SuSE 10 lsb-release file formats
+#   2008.10.30 Brian Finley <finley@anl.gov>
+#       - Turn Ethan's code and concept into a subroutine.
+#   2008.11.06 Brian Finley <finley@anl.gov>
+#       - Use back-ticks instead of $() for running commands for Solaris
+#         compatibility
+#   2009.01.15 Hunter Matthews <hunter@mcs.anl.gov>
+#       - Various code and svn repository cleanups.
+#   2010.05.17 Hunter Matthews <hunter@mcs.anl.gov>
+#       - Added support for opensolaris
+#   2010.12.06 Brian Elliott Finley <finley@anl.gov>
+#       - Added support for Oracle Enterprise Linux (oraclelinux)
+#
+#
+#   Authors -- Be sure to increment the version number appropriately!
 #
 # ===========================================================================
 #
@@ -67,289 +114,63 @@
 # 
 # Machine type strings:
 #
-#   sun4
+#   aix-{version}.{release}
+#   aux
+#   digital
+#   freebsd
+#   hpux
 #   irix-5
 #   irix-6
-#   solaris
-#   freebsd
-#   aix-3
-#   aix-4
-#   aix-5
-#   aux
-#   hpux
+#   linux-{distro_and_version}-{architecture}
 #   mips
-#   osf
-#   digital
 #   next
-#   linux
-#   solaris86
-#   solarishp
 #   nt
 #   ntalpha
+#   osf
+#   solaris
+#   solaris86
+#   solarishp
+#   sun4
 #
 # ===========================================================================
+
+if [ -n "$WHATAMI_DEBUG" ] ; then
+  DEBUG=true
+else
+  DEBUG=false
+fi
 
 program=`echo $0 | sed 's:.*/::'` 
-version="2.2.1"
+version="2.4.3"
 
-################################################################################
-#
+
+##############################################################################
 # Subroutines
-#
-get_linux_type()
+##############################################################################
+debug()
 {
-        ############################################################################
-        #
-        # Step 1)  Determine $hardware string (in Linux terms, based on architecture
-        #          names used by the Linux kernel.  See /usr/src/linux/hardware/ for
-        #          details).
-        #
-        case $uhardware in
-                alpha)
-                        hardware=alpha
-                        ;;
-                i386|i486|i586|i686)
-                        hardware=ia32
-                        ;;
-                ppc64)
-                        hardware=ppc64
-                        ;;
-                ia64)
-                        hardware=ia64
-                        ;;
-                x86_64)
-                        hardware=x86_64
-                        ;;
-                *)
-                        hardware=unknown_please_send_us_a_patch
-                        ;;
-        esac
-        #
-        ############################################################################
-        
-        ############################################################################
-        #
-        # Step 2)  Determine $distro (distribution) string
-        #
-        if [ -f /etc/issue ]; then
-        
-                if [ -e /etc/debian_version ]; then
-                        distro_brand=debian
-                        distro_version=`cat /etc/debian_version | sed 's#testing/##'`
-                        distro=${distro_brand}_${distro_version}
-
-                elif [ -n "`egrep 'Red Hat Linux Advanced Server release 2.1AS ' /etc/issue`" ]; then
-                        distro=redhat_2.1AS
-                
-                elif [ -n "`egrep 'Red Hat Linux release 9 ' /etc/issue`" ]; then
-                        distro=redhat_9
-                
-                elif [ -n "`egrep 'Red Hat Linux release 8.0 ' /etc/issue`" ]; then
-                        distro=redhat_8.0
-
-                elif [ -n "`egrep 'Red Hat Enterprise Linux Server release 6' /etc/issue`" ]; then
-			distro=rhel6			
-                
-                elif [ -n "`egrep 'Mandrake Linux release 9.1 ' /etc/issue`" ]; then
-                        distro=mandrake_9.1
-                
-                elif [ -n "`egrep 'SUSE LINUX Enterprise Server 9' /etc/issue`" ]; then
-                        distro=sles9
-
-                elif [ -n "`egrep 'SUSE Linux Enterprise Server 10' /etc/issue`" ]; then
-                        distro=sles10
-
-                elif [ -n "`egrep 'SuSE SLES 8' /etc/issue`" ]; then
-                        distro=sles8
-                
-                elif [ -n "`egrep 'UnitedLinux 1.0' /etc/issue`" ]; then
-                        distro=sles8
-                
-                # Welcome to SuSE Linux 9.0 (x86-64) - Kernel \r (\l)
-                elif [ -n "`egrep 'SuSE Linux 9\.0' /etc/issue`" ]; then
-                        distro=suse_9.0
-                
-                else
-                        distro=unknown_please_send_us_a_patch
-                fi
-        fi
-        #
-        ############################################################################
-        
-        ############################################################################
-        #
-        # Step 3)  Put it all together as $type
-        #
-        type=linux-${distro}-${hardware}
-        #
-        ############################################################################
-        
-        os=$uos
-        release=$urelease
+  if [ $DEBUG = true ]; then
+    echo DEBUG: $*
+  fi
 }
 
-get_darwin_info()
+lowercase()
 {
-        ############################################################################
-        #
-        # step 1)  determine $hardware (architecture) string
-        #          (Should be one of ppc, ppc64.  Why these strings?  Well, we are
-        #           taking them from the arches directory names in the linux kernel
-        #           source.) -BEF-
-        # 
-        if [ -n "`system_profiler SPHardwareDataType|egrep 'CPU Type: PowerPC G4 '`" ]; then
-                hardware=ppc
-        elif [ -n "`system_profiler SPHardwareDataType|egrep 'CPU Type: PowerPC 970 '`" ]; then
-                hardware=ppc64
-        else
-                hardware=unknown_please_send_us_a_patch
-        fi
-        #
-        ############################################################################
-
-        ############################################################################
-        #
-        # step 2)  determine $distro (distribution) string
-        #
-        #          Thanks to JP Navarro for the get distro version string command 
-        #          below. -BEF-
-        #
-
-        distro_brand=macosx
-        distro_version=`sw_vers -productVersion`
-        distro=${distro_brand}_${distro_version}
-        if [ -z "$distro" ]; then
-                distro=unknown_please_send_us_a_patch
-        fi
-        #
-        ############################################################################
-        
-        ############################################################################
-        #
-        # Step 3)  Put it all together as $type
-        #
-        type=darwin-${distro}-${hardware}
-        #
-        ############################################################################
-        
-        os=$uos
-        release=$urelease
+  echo $1 | sed -e \
+           'y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/'
 }
-#
-################################################################################
 
-#
-# Check the number of arguments and set the mode.
-#
-mode=unknown
-if [ $# = 0 ]; then
-  mode=type
-elif [ $# = 1 ]; then
-  case "$1" in
-    --t*|-t* )
-      mode=type
-      ;;
-    --n*|-n* )
-      mode=os
-      ;;
-    --r*|-r* )
-      mode=release
-      ;;
-    --m*|-m* )
-      mode=hardware
-      ;;
-    --a*|-a* )
-      mode=all
-      ;;
-    --list-all* )
-      mode=list_all
-      ;;
-    --l*|-l* )
-      mode=list
-      ;;
-    --v*|-v* )
-      mode=version
-      ;;
-    --h*|-h* )
-      mode=usage
-      ;;
-    --o*|-o* )
-      mode=option_test
-      # Cycles through and tries each of the other options, for testing purposes.
-      ;;
-  esac
-fi
-
-if [ "$mode" = "unknown" -o "$mode" = "usage" ]; then
-        echo "$program $version"
-        echo
-        echo "Usage: $program [OPTION]"
-        echo
-        cat <<EOF
-whatami determines the "platform" of the system on which it is run.  This
-can be used, for example, to determine which of a series of nfs mounted
-software directories is appropriate for use by the system in question.
-
-No unix utility quite fulfills these requirements, so the "whatami" program's
-purpose is to return a single unique string for each platform.  This string
-can then used in directory names, program switches, and in other clever ways.
-
-Options:
- --help, -h
-    This help message.
-
- --version, -v
-    The version of $program.
-
- --type, -t
-    Prints the platform type (the default).
-
- --name, -n
-    Prints out the name of the operating system.
-
- --release, -r
-    Prints out the name and release of the os, separated by a space.
-
- --machine, -m
-    Prints out the architecture type for the machine.
-
- --all, -a
-    Prints platform type, hardware, os, and version, seperated by a space.
-
- --list, -l
-    Lists summary of known description strings.
-
-Please send patches to MCS Systems <systems@mcs.anl.gov>.
-
-EOF
-#XXX add the bit below to the end of the help when appropriate.
-#Download, report bugs, and make suggestions at:
-#http://systemimager.org/
-
-
-        if [ "$mode" = "usage" ]; then
-                exit 0
-        else
-                exit 1
-        fi
-fi
-
-# ===========================================================================
-# Okay, now we know what we should do... if the mode is list or the version
-# that's easy to get out of the way.
-# 
-# Be sure to add to this list whenever a new architecture is figured out.
-# ===========================================================================
-
-if [ "$mode" = "list" ]; then
-        cat <<EOF
+print_description_list()
+{
+    # Be sure to add to this list whenever a new architecture is figured out.
+    cat <<EOF
 type:      cpu    os       version
 ==================================
 linux: (potential linux platform strings are numerous,
         and may not be known in advance)
-aix-3:     *      AIX      3.x
-aix-4:     *      AIX      4.x
-aix-5:     *      AIX      5.x
+aix-3.x:   *      AIX      3.x
+aix-4.x:   *      AIX      4.x
+aix-5.x:   *      AIX      5.x
 aux:       *      A/UX     *
 freebsd:   *      FreeBSD  *
 hpux:      *      HP-UX    *
@@ -360,30 +181,583 @@ solaris:   sparc  SunOS    5.x
 sun4:      sparc  SunOS    4.x
 ultrix:    *      Ultrix   *
 EOF
-  exit 0
-fi
 
-if [ "$mode" = "version" ]; then
-  echo "$program $version"
-  exit 0
-fi
+}
 
-if [ "$mode" = "option_test" ]; then
+print_usage()
+{
+    echo "$program $version"
+    echo
+    echo "Usage: $program [OPTION]"
+    echo
+    cat <<EOF
+whatami determines the "platform" of the system on which it is run.  This
+can be used, for example, to determine which of a series of nfs mounted
+software directories is appropriate for use by the system in question.
+
+No unix utility quite fulfills these requirements, so the "whatami" program's
+purpose is to return a single unique string for each platform.  This string
+can then used in directory names, program switches, and in other clever ways.
+
+Options:
+ --all, -a
+    Prints platform type, hardware, os, and version, seperated by a space.
+
+ --bcfg2, -b
+   Prints out information in bcfg2 format. For use with bcfg2.
+
+ --classad, -c
+    Prints out information in classad format (used with Condor, etc).
+
+ --compat
+    Prints out distro/type strings compatible with earlier version of whatami.
+    Please note that this option MUST BE FIRST ON THE COMMAND LINE.
+    Cray Rocks Linux 1.3, SGI Propack 3/4, Suse SLES 8/9/10, 
+    CentOS 4.x and Fedora Core are affected by this option.
+
+ --family, -f
+   Print out the distribution family name. Common for linux, darwin/osx,
+   and solaris. Not really applicable to other unixen.
+    
+ --help, -h
+    This help message.
+
+ --list, -l
+    Lists summary of known description strings.
+
+ --machine, -m
+    Prints out the architecture type for the machine.
+
+ --name, -n
+    Prints out the name of the operating system.
+
+ --option_test 
+    Run all of the various options at once.
+    Used to debug $program itself. 
+    
+ --release, -r
+    Prints out the name and release of the os, separated by a space.
+    Note that this is typically the KERNEL release, not the os or 
+    distribution release. (Which whatami calls the "version")
+
+ --shell, -s
+    Prints out information in bourne shell format.
+
+ --type, -t
+    Prints the platform type (the default).
+
+ --version,-v
+    Prints out the distribution version. This is typically what
+    people want/should use on linux, osx and solaris rather than 
+    the release (which is the kernel release).
+
+ -V
+    Print the version of $program.
+
+ --xml, -x
+    Print out information in XML.
+    
+Please send patches to MCS Systems <systems@mcs.anl.gov>.
+
+EOF
+}
+
+get_lsb_info_if_available()
+{
+  if [ -x /usr/bin/lsb_release ]; then
+    DISTRIB_ID=`/usr/bin/lsb_release -i | sed -e 's/^Distributor ID:[[:space:]]//'`
+    DISTRIB_RELEASE=`/usr/bin/lsb_release -r | sed -e 's/^Release:[[:space:]]//'`
+  elif [ -f /etc/lsb-release ]; then
+    #
+    # 1) Example contents of /etc/lsb-release from Ubuntu Hardy:
+    #   DISTRIB_ID=Ubuntu
+    #   DISTRIB_RELEASE=8.04
+    #   DISTRIB_CODENAME=hardy
+    #   DISTRIB_DESCRIPTION="Ubuntu hardy (development branch)"
+    # 2) Example contents of /etc/lsb-release from SLES 9:
+    #   LSB_VERSION="core-2.0-noarch:core-3.0-noarch:core-2.0-x86_64:core-3.0-x86_64"
+    . /etc/lsb-release
+
+  fi
+
+  debug LSB DISTRIB_ID = $DISTRIB_ID
+  debug LSB DISTRIB_RELEASE = $DISTRIB_RELEASE
+
+}
+
+get_linux_type()
+{
+  ############################################################################
   #
-  # Test all options for whatami (except this one, of course)
+  # Step 1)  Determine $hardware string (in Linux terms, based on architecture
+  #          names used by the Linux kernel.  See /usr/src/linux/hardware/ for
+  #          details).
   #
-  for opt in -t -n -r -m -a -v --version -h --help -l
-  do
-      cmd="$0 $opt"
-      echo -n "$cmd: "
-      $cmd
-      if [ ! $? = 0 ]; then
-        echo "Failed on option $opt"
-        exit 1
+  ############################################################################
+
+  # I have mixed opinions about this case statement. In one sense its nearly
+  # pointless. IN another, it forces any new uhardware string to fail and 
+  # should result in a report or even patch coming to us. Meh.
+  case $uhardware in
+    alpha)
+      hardware=alpha
+      ;;
+    i386|i486|i586|i686)
+      debug compat_opt = $compat_opt
+      if [ $compat_opt = "true" ]; then
+        hardware=ia32
+      else
+        hardware=i386
       fi
-  done
-  exit 0
+      ;;
+    ppc64)
+      hardware=ppc64
+      ;;
+    ia64)
+      hardware=ia64
+      ;;
+    x86_64)
+      hardware=x86_64
+      ;;
+    *)
+      hardware=unknown_hardware_please_send_us_a_patch
+      ;;
+  esac
+
+        
+  ############################################################################
+  #
+  # Step 2)  Determine $distro (distribution) string
+  #
+  #          NOTES: Put newer tests higher up, as they'll most 
+  #                 likely get hit first. -BEF-
+  #          NOTES: But, make sure that newer programatic tests don't override
+  #                 older tests with different results. -BEF-
+  #
+  # If lsb-release contains the DISTRIB* variables we need - use
+  # them, otherwise, defer to tests later down the line.
+  #
+  ############################################################################
+
+  get_lsb_info_if_available
+
+  ###
+  ### Best - if we can get it from lsb info, do so
+  ###
+
+  if [ "${DISTRIB_ID}" != "" -a "${DISTRIB_RELEASE}" != "" ]; then
+
+    case `lowercase $DISTRIB_ID` in 
+      centos)
+        distro_family=rhel
+	;;
+      redhatenterprise*)
+        distro_family=rhel
+	;;
+      enterpriseenterprise*)
+        distro_family=oraclelinux
+	;;
+      ubuntu)
+        distro_family=ubuntu
+	;;
+      debian)
+        distro_family=debian
+	;;
+      *)
+        distro_family=unknown_distro_family_please_submit_patch
+    esac
+
+    distro_version=`echo $DISTRIB_RELEASE | sed -e 's/\(.*\)\..*/\1/'`
+    if [ $compat_opt = "true" -o $distro_family = "ubuntu" ]; then
+      distro_version=$DISTRIB_RELEASE
+    fi
+    distro=${distro_family}_${distro_version}
+
+  ###
+  ### Good - if we can find a distribution specific file, use that.
+  ### 
+
+  elif [ -e /etc/redhat-release ]; then
+      distro_family=rhel
+      distro_version=`cut -f 3 -d ' ' /etc/redhat-release | cut -f 1 -d . `
+      distro=${distro_family}_${distro_version}
+      
+  elif [ -e /etc/debian_version ]; then
+      distro_family=debian
+      distro_version=`cat /etc/debian_version | sed 's#testing/##'`
+      distro=${distro_family}_${distro_version}
+
+  elif [ -e /etc/gentoo-release ]; then
+      distro_family=gentoo
+      gentoo_profile=`readlink /etc/make.profile`
+      distro_version=`basename ${gentoo_profile}`
+      distro=${distro_family}_${distro_version}
+
+  ###
+  ### Ugly - if all we have is the /etc/issue file, oh well.
+  ### 
+  ### Any of these tests we could turn into the second type (distro 
+  ### specific file) would be a vast improvement
+  ###
+
+  elif [ -f /etc/issue ]; then
+
+    if [ -n "`egrep 'CentOS release 4.[0-9]' /etc/issue`" ]; then
+      distro_family=rhel
+      distro_version=4
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+
+    elif [ -n "`egrep 'Cray Rocks Linux release 1.3' /etc/issue`" ]; then
+      distro_family=rh
+      distro_version=73
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+    
+    elif [ -n "`egrep 'Fedora Core ' /etc/issue`" ]; then
+      distro_family=fc
+      distro_version=`grep 'Fedora Core ' /etc/issue | sed -e 's/Fedora Core release \([0-9]*\).*/\1/' `
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+
+    elif [ -n "`egrep 'Mandrake Linux release 9.1 ' /etc/issue`" ]; then
+      distro_family=mandrake
+      distro_version=9.1
+      distro=mandrake_9.1
+    
+    elif [ -n "`egrep 'Red Hat Enterprise Linux ([a-zA-Z]+) release [0-9]*' /etc/issue`" ]; then
+      distro_family=rhel
+      #sub_distro=`    grep 'Red Hat' /etc/issue | sed -e 's/Red Hat Enterprise Linux \([A-Z][A-Z]\) release \([0-9]*\).*/\1/' `
+      distro_version=`grep 'Red Hat' /etc/issue | sed -e 's/Red Hat Enterprise Linux \([a-zA-Z]*\) release \([0-9]*\).*/\2/' `
+      #distro=${distro_family}${distro_version}_${sub_distro}
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+
+    elif [ -n "`egrep 'Red Hat Linux Advanced Server release 2.1AS ' /etc/issue`" ]; then
+      distro_family=redhat
+      distro_version=2.1AS
+      distro=redhat_2.1AS
+    
+    elif [ -n "`egrep 'Red Hat Linux release 8.0 ' /etc/issue`" ]; then
+      distro_family=redhat
+      distro_version=8.0
+      distro=redhat_8.0
+    
+    elif [ -n "`egrep 'Red Hat Linux release 9 ' /etc/issue`" ]; then
+      distro_family=redhat
+      distro_version=9
+      distro=redhat_9
+    
+    elif [ -n "`egrep 'Scientific Linux SL release [0-9\.]+' /etc/issue`" ]; then
+      distro_family=scientificlinux
+      distro_version="`grep 'Scientific Linux' /etc/issue | sed -e 's/.*release \([0-9]*\.[0-9]*\).*/\1/'`"
+      distro=${distro_family}_${distro_version}
+
+    elif [ -n "`egrep 'SGI ProPack 3' /etc/issue`" ]; then
+      distro_family=rhel
+      distro_version=3
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+    
+    elif [ -n "`egrep 'SGI ProPack 4' /etc/issue`" ]; then
+      distro_family=sles
+      distro_version=9
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+
+    # Welcome to SuSE Linux 9.0 (x86-64) - Kernel \r (\l)
+    elif [ -n "`egrep 'SuSE Linux 9\.0' /etc/issue`" ]; then
+      distro_family=suse
+      distro_version=9.0
+      distro=suse_9.0
+
+    elif [ -n "`egrep 'SuSE Linux 9\.1' /etc/issue`" ]; then
+      distro_family=suse
+      distro_version=9.1
+      distro=suse_9.1
+
+    elif [ -n "`egrep 'SuSE Linux 9\.2' /etc/issue`" ]; then
+      distro_family=suse
+      distro_version=9.2
+      distro=suse_9.2
+
+    elif [ -n "`egrep 'SuSE Linux 9\.3' /etc/issue`" ]; then
+      distro_family=suse
+      distro_version=9.3
+      distro=suse_9.3
+
+    # Welcome to SUSE LINUX 10.1 (i586) - Kernel \r (\l).
+    elif [ -n "`egrep 'SUSE LINUX 10\.1' /etc/issue`" ]; then
+      distro_family=suse
+      distro_version=10.1
+      distro=suse_10.1
+
+    # Welcome to openSUSE 10.2 (i586) - Kernel \r (\l).
+    elif [ -n "`egrep 'SUSE 10\.2' /etc/issue`" ]; then
+      distro_family=suse
+      distro_version=10.2
+      distro=suse_10.2
+
+    elif [ -n "`egrep 'SUSE 10\.3' /etc/issue`" ]; then
+      distro_family=suse
+      distro_version=10.3
+      distro=suse_10.3
+
+    elif [ -n "`egrep 'SuSE SLES 8' /etc/issue`" ]; then
+      distro_family=sles
+      distro_version=8
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+
+    elif [ -n "`egrep 'SUSE LINUX Enterprise Server 9' /etc/issue`" ]; then
+      distro_family=sles
+      distro_version=9
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+
+    elif [ -n "`egrep 'SUSE Linux Enterprise Server 10' /etc/issue`" ]; then
+      distro_family=sles
+      distro_version=10
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+
+    elif [ -n "`egrep 'Tao Linux release 1 ' /etc/issue`" ]; then
+      distro_family=tao
+      distro_version=1.0
+      distro=tao_1.0
+
+    elif [ -n "`egrep 'UnitedLinux 1.0' /etc/issue`" ]; then
+      distro_family=sles
+      distro_version=8
+      distro=${distro_family}_${distro_version}
+      if [ $compat_opt = "true" ]; then
+        distro=${distro_family}${distro_version}
+      fi
+
+    elif [ -n "`egrep 'White Box Enterprise Linux release 3.0' /etc/issue`" ]; then
+      # This really should have been "rhel", or "wbel" at most
+      distro_family=white_box_enterprinse_linux
+      distro_version=3.0
+      distro=white_box_enterprise_linux_3.0
+
+    # These are SPECIAL, OBSOLETE, LEGACY DEFINITIONS - they set the type 
+    # directly, rather than the code below. 
+    elif [ -n "`cat /etc/issue | grep "Mandrake release 7.2"`" ]; then
+      distro_family=mandrake
+      distro_version=7.2
+      distro=${distro_family}_${distro_version}
+      type=linux-2
+    elif [ -n "`cat /etc/issue | grep "Red Hat Linux release 7.1"`" ]; then
+      distro_family=rh
+      distro_version=7.1
+      distro=${distro_family}_${distro_version}
+      type=linux-rh71
+    elif [ -n "`cat /etc/issue | grep "Red Hat Linux release 7.2"`" ]; then
+      distro_family=rh
+      distro_version=7.2
+      distro=${distro_family}_${distro_version}
+      type=linux-rh72
+    elif [ -n "`cat /etc/issue | grep "Red Hat Linux release 7.3"`" ]; then
+      distro_family=rh
+      distro_version=7.3
+      distro=${distro_family}_${distro_version}
+      type=linux-rh73
+
+    else
+      distro=unknown_linux_type_please_send_us_a_patch
+    fi
+  fi
+  
+  ############################################################################
+  # Step 3)  Put it all together as $type
+  ############################################################################
+  # we need this goofy test to handle the 4 LEGACY definitions above.    
+  if [ -z "$type" -o $type = "unknown" ] ; then
+      type=linux-${distro}-${hardware}
+  fi
+  
+  debug distro_family = $distro_family
+  debug distro_version = $distro_version
+  debug distro = $distro
+  
+}
+
+get_darwin_info()
+{
+  ############################################################################
+  #
+  # step 1)  determine $hardware (architecture) string
+  #    (Should be one of ppc, ppc64.  Why these strings?  Well, we are
+  #     taking them from the arches directory names in the linux kernel
+  #     source.) -BEF-
+  # 
+  ############################################################################
+
+  if [ -n "`system_profiler SPHardwareDataType|egrep '(CPU Type|Processor Name): PowerPC G4 '`" ]; then
+    hardware=ppc
+  elif [ -n "`system_profiler SPHardwareDataType|egrep '(CPU Type|Processor Name): PowerPC (970|G5) '`" ]; then
+    hardware=ppc64
+  elif [ -n "`system_profiler SPHardwareDataType|egrep 'Processor Name: Intel Core Duo'`" ]; then
+    hardware=ia32
+  elif [ -n "`system_profiler SPHardwareDataType|egrep 'Processor Name: (Dual-Core Intel Xeon|Intel Core 2 Duo)'`" ]; then
+    hardware=x86_64
+  else
+    hardware=unknown_darwin_hardware_please_send_us_a_patch
+  fi
+
+  ############################################################################
+  #
+  # step 2)  determine $distro (distribution) string
+  #
+  #    Thanks to JP Navarro for the get distro version string command 
+  #    below. -BEF-
+  #
+  ############################################################################
+
+  distro_family=macosx
+  distro_version=`sw_vers -productVersion|sed -e 's/\([0-9]\{1,2\}\.[0-9]\{1,2\}\).*/\1/'`
+  distro=${distro_family}_${distro_version}
+  if [ -z "$distro" ]; then
+    distro=unknown_darwin_version_please_send_us_a_patch
+  fi
+  
+  ############################################################################
+  #
+  # Step 3)  Put it all together as $type
+  #
+  ############################################################################
+
+  type=darwin-${distro}-${hardware}
+
+  os=$uos
+  release=$urelease
+
+  debug distro_family = $distro_family
+  debug distro_version = $distro_version
+  debug distro = $distro
+
+}
+
+##############################################################################
+#
+# This is "main()" of the script
+# Process the command line first.
+#
+##############################################################################
+mode=type
+format=plain
+compat_opt=false
+
+debug '$0' is $0
+
+if [ $program = bprobe ] ; then
+   # we are named or symlinked bprobe, meaning we are running as a bcfg2
+   # probe. Setup the defaults a little differently.
+   echo "I'm a probe and I'm proud!"
+   mode=bcfg2
 fi
+
+while [ $# -gt 0 ]; do
+
+  arg=$1
+  shift
+
+  case $arg in
+    --all|-a)
+      mode=all
+      ;;
+    --classad|-c)
+      mode=classad
+      ;;
+    --compat)
+      compat_opt=true
+      ;;
+    --bcfg2|-b)
+      mode=bcfg2
+      ;;
+    --family|-f)
+      mode=family
+      ;;
+    --help|-h)
+      print_usage
+      exit 0
+      ;;
+    --list-all)
+      mode=list_all
+      ;;
+    --list|-l)
+      print_description_list
+      exit 0
+      ;;
+    --machine|-m)
+      mode=hardware
+      ;;
+    --name|-n)
+      mode=os
+      ;;
+    --option-test|--option_test)
+      # FIXME: this is getting to long for the case statement
+      for opt in -a -b -c -f -h -l -n -r -s -t -v -V -x
+      do
+        cmd="$0 $opt"
+        # FIXME: the builtin echo on many platforms does not support -n
+        echo -n "$cmd: "
+        $cmd
+        if [ ! $? = 0 ]; then
+          echo "Failed on option $opt"
+          exit 1
+        fi
+      done
+      exit 0
+      ;;
+    --release|-r)
+      # KERNEL release, not the distro/family release
+      mode=release
+      ;;
+    --shell|-s)
+      mode=shell
+      ;;
+    --type|-t)
+      mode=type
+      ;;
+    --version|-v)
+      mode=version
+      ;;
+    -V)
+      echo "$program $version"
+      exit 0
+      ;;
+    --xml|-x)
+      mode=xml
+      ;;
+    *)
+      echo "ERROR: Unrecognized command line option" $arg
+      print_usage
+      exit 1
+      ;;
+  esac
+done
+
+debug mode = $mode
+debug compat_opt = $compat_opt
 
 # ===========================================================================
 # Find uname, store its location in $UNAME
@@ -418,20 +792,14 @@ os=unknown
 release=unknown
 hardware=unknown
 
+distro=unknown
+distro_family=unknown
+distro_version=unknown
+
 case "${uos}:${urelease}:${uhardware}" in
   AIX:*:*)
     release=`$UNAME -v 2>/dev/null` || release=unknown
-    case $release in
-      3)
-        type=aix-3
-        ;;
-      4)
-        type=aix-4
-        ;;
-      5)
-        type=aix-5
-        ;;
-    esac
+    type=aix-$release.$urelease
     os=$uos
     hardware=$uhardware
     ;;
@@ -440,6 +808,13 @@ case "${uos}:${urelease}:${uhardware}" in
     type=aux
     os=$uos
     release=$urelease    
+    hardware=$uhardware
+    ;;
+
+  CYGWIN_NT-5.1:*:*)
+    type=cygwin-5.1
+    os=$uos
+    release=$urelease
     hardware=$uhardware
     ;;
 
@@ -480,30 +855,7 @@ case "${uos}:${urelease}:${uhardware}" in
     os=$uos
     release=$urelease
     hardware=$uhardware
-    case $uhardware in
-	alpha)
-            # legacy definition
-	    type=linux-alpha
-	    ;;
-	*)
-            # legacy definitions
-	    if [ -f /etc/issue ]; then
-		if [ -n "`cat /etc/issue | grep "Mandrake release 7.2"`" ]; then
-		    type=linux-2
-		elif [ -n "`cat /etc/issue | grep "Red Hat Linux release 7.1"`" ]; then
-		    type=linux-rh71
-		elif [ -n "`cat /etc/issue | grep "Red Hat Linux release 7.2"`" ]; then
-		    type=linux-rh72
-		elif [ -n "`cat /etc/issue | grep "Red Hat Linux release 7.3"`" ]; then
-		    type=linux-rh73
-		else 
-		    get_linux_type
-		fi
-	    else
-		type=linux
-	    fi
-	    ;;
-    esac
+    get_linux_type
     ;;
 
   SunOS:4*:*)
@@ -514,11 +866,27 @@ case "${uos}:${urelease}:${uhardware}" in
     ;;
 
   SunOS:5*:*)
-    solaris_version=`uname -r | sed 's/^5\.//'`
-    type=solaris-${solaris_version}
-    os=$uos
-    release=$urelease
-    hardware=`/bin/arch -k` || hardware=unknown
+    # yes, solaris is now a family of os's like linux - solaris, opensolaris, nexenta, schillix, etc
+    distro_family=solaris
+    # real solaris or opensolaris?
+    if grep -i opensolaris /etc/release > /dev/null 2> /dev/null ; then
+	os=opensolaris
+	release=`head -1 /etc/release | tr -s ' ' | cut -d ' ' -f3`
+	type=${os}-${release}
+    else
+	solaris_version=`uname -r | sed 's/^5\.//'`
+	type=solaris-${solaris_version}
+	os=$uos
+	release=$urelease
+    fi
+
+    # arch is deprecated, and has been since... before solaris 7 at least I think
+    if [ -x /usr/bin/isainfo ] ; then
+	hardware=`/usr/bin/isainfo | cut -d ' ' -f1` || hardware=unknown
+    else
+	hardware=`/bin/arch -k` || hardware=unknown
+    fi
+    type=${type}-${hardware}
     ;;
 
   OSF1:*:*)
@@ -535,22 +903,55 @@ case "${uos}:${urelease}:${uhardware}" in
     hardware=$uhardware
     ;;
 
-
 esac
 
 exit_code=0
 
-
+grid=""
 # ===========================================================================
 # Got all the info, now just print the right stuff based on mode.
 # ===========================================================================
-
 case $mode in
-  type)
-    if [ $type = "unknown" ]; then
+  all)
+    # FIXME: This is wrong - it should at least say WHAT failed.
+    if [ $hardware = "unknown" \
+	-o $os = "unknown"   \
+	-o $release = "unknown" ]; then
       exit_code=1
     fi
-    echo $type
+    echo "$type $hardware $os $release"
+    ;;
+
+  bcfg2)
+    echo "group: $os"
+    echo "group: $hardware"
+    echo "group: $distro_family"
+    echo "group: $distro_version"
+    ;;
+
+  classad|shell)  # These two formats ARE the same - synonyms on the cmdline.
+    echo ${grid}whatami_type=\"$type\"
+    echo ${grid}whatami_os=\"$os\"
+    echo ${grid}whatami_release=\"$release\"
+    echo ${grid}whatami_hardware=\"$hardware\"
+    if [ $os = "Linux" ]; then
+       echo ${grid}whatami_distro=\"$distro\"
+    fi
+    exit
+    ;;
+
+  family)
+    if [ $distro_family = "unknown" ]; then
+      exit_code=1
+    fi
+    echo $distro_family
+    ;;
+
+  hardware)
+    if [ $hardware = "unknown" ]; then
+      exit_code=1
+    fi
+    echo $hardware
     ;;
 
   os)
@@ -567,22 +968,38 @@ case $mode in
     echo "$os $release"
     ;;
 
-  hardware)
-    if [ $hardware = "unknown" ]; then
+  type)
+    if [ $type = "unknown" ]; then
       exit_code=1
     fi
-    echo $hardware
+    echo $type
     ;;
 
-  all)
-    if [    $hardware = "unknown" \
-	 -o $os = "unknown"   \
-	 -o $release = "unknown" ]; then
+  version)
+    if [ $distro_version = "unknown" ]; then
       exit_code=1
     fi
-    echo "$type $hardware $os $release"
+    echo $distro_version
     ;;
+
+  xml)
+    echo "<${grid}whatami>"
+    echo "  <type>$type</type>"
+    echo "  <os>$os</os>"
+    echo "  <release>$release</release>"
+    echo "  <hardware>$hardware</hardware>"
+    if [ $os = "Linux" ]; then
+       echo "  <distro>$distro</distro>"
+    fi
+    echo "</${grid}whatami>"
+    exit
+    ;;
+
+  *)
+    echo "ERROR: You've found a mode bug in whatami - please report."
+    exit_code=1
 esac
 
 exit $exit_code
  
+## END OF LINE ##
