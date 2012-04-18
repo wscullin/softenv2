@@ -26,6 +26,8 @@ coding on softenv. It's a good idea Alan started and we should keep up.
 
 17 April 2012 ( davidr )
 
+=1 
+
 Instead of rewriting whatami, should we think about replacing it with another, 
 public utility? The only thing that comes to mind is facter, which is very 
 robust and well-maintained. The downside would be the added ruby+facter 
@@ -33,3 +35,13 @@ dependency, but the benefits may very well outweigh the downside.
 
 If not, perhaps some sort of compatibility layer where the user can supply
 a fact-prividing program of their choosing?
+
+=2
+
+Also, perahps an eventual integration with autoconf/automake packages would 
+be very handy, like a:
+
+  [softenv2_cmd_name] build tgz ~/src/gcc-4.7.0.tar.gz -- --prefix=foo
+
+which does the ./configure && make && make install and generates the softenv2
+module configuration
