@@ -23,3 +23,13 @@ coding on softenv. It's a good idea Alan started and we should keep up.
     -- the admin commands need meaningful names
     
     I started also to replicate the legacy perl parser in python and am looking for a better document parser than a bunch of python regexes. This isn't knocking the legacy parser, it's a testament to perl's rexeg engine.
+
+17 April 2012 ( davidr )
+
+Instead of rewriting whatami, should we think about replacing it with another, 
+public utility? The only thing that comes to mind is facter, which is very 
+robust and well-maintained. The downside would be the added ruby+facter 
+dependency, but the benefits may very well outweigh the downside.
+
+If not, perhaps some sort of compatibility layer where the user can supply
+a fact-prividing program of their choosing?
