@@ -1,0 +1,38 @@
+Information that should be stored in a package's database (making no assumptions
+about the database itself at present):
+
+
+Required:
+
+- name
+- version
+- short description
+
+
+Optional:
+
+- installation prefix location
+- standard path changes:
+     Append or prepend to the following:
+     - PATH
+     - LD_LIBRARY_PATH
+     - LD_LIBRARY_PRELOAD
+     - CPPFLAGS
+     - LDFLAGS
+     - ...
+- arbitrary environment variable contents (option to append with 
+  arbitrary delimiters)
+- long description
+- dependencies (package and version)
+- logic to query whether other modules are loaded
+- build metadata
+     - builder name
+     - builder email
+     - build host
+     - package web page
+     - include config.log file from autoconf packages
+- build info
+     - stashed location of source tgz
+     - ./configure arguments
+     - make arguments
+     - make, make install output
