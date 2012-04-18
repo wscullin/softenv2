@@ -45,3 +45,9 @@ be very handy, like a:
 
 which does the ./configure && make && make install and generates the softenv2
 module configuration
+
+Or even a way to use the same build arguments from a previous version of the
+package:
+
+  [softenv2_cmd_name] build tgz --frompkg=gcc-4.4.3 ~/src/gcc-4.7.0.tar.gz
+
