@@ -51,3 +51,77 @@ package:
 
   [softenv2_cmd_name] build tgz --frompkg=gcc-4.4.3 ~/src/gcc-4.7.0.tar.gz
 
+8 May 2012 (estrabd)
+
+I am digging back into my brain for a "wish list" of things that I wish we had
+when we were managing things at LSU HPC.
+
+I modified the configuration "compiler" to accept additional keywords that would
+allow us to define various meta data for documentation that we auto-generated, the
+stuffed into a MediaWiki (see https://docs.loni.org/wiki/Linux_Software, for example).
+
+We were also trying to create a way to automate the deployment and testing of all
+software, and though this system one of our design goals was could also automate
+the generation of SoftEnv configuration files.
+
+After banging my head against it, I decided that what I really though would have
+been better would have been to adopt something like NetBSD's pkgsrc, but create
+a "distribution" for HPC environments. (I still think it's a good idea); the benefit
+there is that one can use one of the many tools out there for reading through the 
+pkgsrc database. I digress.
+
+So I would suggest that we think about including the following:
+
+1. ability to auto-generate documentation based on the configuration file
+
+2. make it easy (or keep it "easy") to compose configurations using some sort
+of "include" directive. 
+
+Regarding the overall design, I recall being vehemently against the TCL project,
+Modules, that TeraGrid seems to have been pushing down our throats. Once I left
+LSU and went to UH, I was forced to use Modules...and I liked it, a lot.  But, it's
+a turbo pain in the ass to set up.
+
+What I liked about Modules:
+
+a. it makes it easy to build up an environment via commandline; a user's configuration
+file is simply a series of "module add X", etc. There are some basic features to denote
+what modules are implied by one another (load one, the others must get loaded) or what
+modules are mutually exclusive (others must get unloaded).
+
+b. it allowed one to create their own set of module definitions in their own home directory.
+
+What I hated about it:
+
+Simply, it's written in TCL and the configuration files were a nightmare to do anything 
+complicated.
+
+Matters of implementation:
+
+Although I don't really do HPC anymore, I work in many different *nix environments that could
+benefit from something like SoftEnv2 or Modules; I do 99% of my work in Perl, so I am glad
+that you're choosing Perl again (I think :). 
+
+Here are some suggestions:
+
+* modularize as much as makes sense (will help you with that OO approach)
+
+* I would not use Moose or anything like that
+
+* package distribution should be in a CPAN style; probably in the "App" namespace;
+
+* take inventory of the various configuration formats and parsers out there; YAML might be
+  appropriate
+
+* unit test; Test::More is really nice and the "prove" utility is very handy
+
+* accepting input from the terminal can be made easier by a myriad of CPAN modules
+
+In closing, one of my goals is to make "Perlbrew" a thing of the past; I work with the guy
+that wrote and maintains "Perlall"; I don't think this will replace that (although it's
+meant to render Perlbrew moot), I do think he'd be interested in following the progress
+of this project.
+
+Thanks!
+Brett
+
