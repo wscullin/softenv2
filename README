@@ -19,4 +19,10 @@ Goals:
           E. source location
           F. build flags and env details
 
+Suggested Goals (BDE):
 
+	6. Use existing software when possible - mainly applies to parsers and DB formats (YAML, Perl's freeze/thaw)
+	7. Allow for ease of central administration (i.e., control initial environment via traditional means, but 
+           make it easy for users to adjust their environments interactively;
+	8. Related to 7 above, get rid of a user's .softenv.sh/csh and turn it into a series of commands like how modules 
+	   does it
