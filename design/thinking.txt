@@ -122,6 +122,58 @@ that wrote and maintains "Perlall"; I don't think this will replace that (althou
 meant to render Perlbrew moot), I do think he'd be interested in following the progress
 of this project.
 
-Thanks!
-Brett
+12 July 2014 (estrabd)
+
+This project popped up on my radar screen again, and I am interested in giving it another go.
+
+I looked through some of the legacy code, but for right now what strikes me most is the style
+of Perl being used. Since Perl is what I do full time these days, I have a couple of thoughts:
+
+* the Perl is generally very good - particularly for the time period (late 90s/early 2000s).
+
+The Good:
+
+* use strict
+* use of subroutines
+
+The Bad:
+
+* "&subroutine_name" is no longer a recommended practice
+* "require script.pl" is now considered bad style
+* no proper use of modules, hence the need for 'require'
+
+Other higher level "bad" things are:
+
+* the use of a proprietary format for the "database"
+
+Other thoughts (some may be repeated from my notes above):
+
+* configuration database should be a standard format, but also be able to have "includes"
+* once a configuration format is decided, we should be able to easily create a conversion script from old style configs
+* the new configs should make it easy to generate documentation (the software list at https://docs.loni.org/wiki/Linux_Software was generated from parsing softenv configs, but it was a hack)
+* configuration entries should be as composable as possible, meaning that it is easy to create a environment ala-cart so long as there are no "conflicts" (I think this is largely how "modules" works)
+* maybe have a concept of "profiles" - I think softenv might have this, but I can't remember atm
+* ability to create my own configs or config overrides in $HOME, maybe for self-managed/non-privileged software installations
+
+From what I recall, softenv is more of an engine for generating resource files for (ba)sh/(t)csh; so we might what to fully embrace this and look at it from a templating perspective. The other side of the coin is that we can see about using it to directly affect the environment, which I am sure is possible with Perl.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
