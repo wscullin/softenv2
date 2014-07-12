@@ -149,13 +149,20 @@ Other higher level "bad" things are:
 Other thoughts (some may be repeated from my notes above):
 
 * configuration database should be a standard format, but also be able to have "includes"
-* once a configuration format is decided, we should be able to easily create a conversion script from old style configs
-* the new configs should make it easy to generate documentation (the software list at https://docs.loni.org/wiki/Linux_Software was generated from parsing softenv configs, but it was a hack)
-* configuration entries should be as composable as possible, meaning that it is easy to create a environment ala-cart so long as there are no "conflicts" (I think this is largely how "modules" works)
+* once a configuration format is decided, we should be able to easily create a conversion script 
+from old style configs
+* the new configs should make it easy to generate documentation (the software list at 
+https://docs.loni.org/wiki/Linux_Software was generated from parsing softenv configs, but it was a hack)
+* configuration entries should be as composable as possible, meaning that it is easy to 
+create a environment ala-cart so long as there are no "conflicts" (I think this is largely how 
+"modules" works)
 * maybe have a concept of "profiles" - I think softenv might have this, but I can't remember atm
-* ability to create my own configs or config overrides in $HOME, maybe for self-managed/non-privileged software installations
+* ability to create my own configs or config overrides in $HOME, maybe for self-managed/non-privileged 
+software installations
 
-From what I recall, softenv is more of an engine for generating resource files for (ba)sh/(t)csh; so we might what to fully embrace this and look at it from a templating perspective. The other side of the coin is that we can see about using it to directly affect the environment, which I am sure is possible with Perl.
+From what I recall, softenv is more of an engine for generating resource files for (ba)sh/(t)csh; so we 
+might what to fully embrace this and look at it from a templating perspective. The other side of the coin i
+s that we can see about using it to directly affect the environment, which I am sure is possible with Perl.
 
 
 
