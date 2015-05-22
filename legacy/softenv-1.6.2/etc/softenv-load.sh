@@ -81,7 +81,7 @@ if [ ! "$HOME" = "/" -a ! -f "$nosoftfile" -a ! "$USER" = "root" ] ; then
 
 # If the SOFTENVRC.cache.sh file doesn't exist, or if the time conditions are
 # true, then we want to run soft-msc
-  if [ -r "$cachef" ] ; then
+  if [ -r "$cachef" -a -s "$cachef" ] ; then
     if [ "`find $softfile -newer $cachef -print`" != "" ] || [ "`find $system_db -newer $cachef -print`" != "" ] ; then
       runmsc="YES"
     fi
